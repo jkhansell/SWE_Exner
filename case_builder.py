@@ -1,91 +1,338 @@
 import numpy as np
+from scipy.optimize import fsolve
+import matplotlib.pyplot as plt
+import functools
 
 # Dam break on a wet domain without friction
 # https://arxiv.org/pdf/1110.0288
 
-def solve_polynomial_numerically(g_val, h_val, r_val, ht_val):
-    """
-    Calculates the numerical solutions for c_m when the polynomial equals zero.
+g = 9.81
+def solve_polynomial_numerically(hl, hr):
+    # Fallback to fsolve if polynomial root finding fails or selects an unphysical one
+    def equation_for_cm(cm, g, hlt, hrt):
 
-    Args:
-        g_val (float): Numerical value for g.
-        h_val (float): Numerical value for h.
-        r_val (float): Numerical value for r.
-        ht_val (float): Numerical value for h_t.
+        cr = np.sqrt(g*hrt)
+        cl = np.sqrt(g*hlt)
 
-    Returns:
-        numpy.ndarray: An array of numerical roots for c_m.
-                      Returns None if an error occurs (e.g., sqrt of negative number).
-    """
-    try:
-        # Calculate coefficients based on the expanded polynomial:
-        # (1 - 8ghr)c_m^4 + 16ghr sqrt(gh_t) c_m^3 - 8g^2h_t h r c_m^2 - g^2h^2r^2 = 0
+        term1 = -8 * cr**2 * cm**2 * (cl - cm)**2
+        term2 = (cm**2 - cr**2)**2 * (cm**2 + cr**2)
+        return term1 + term2
 
-        coeff_cm4 = (1 - 8 * g_val * h_val * r_val)
-        coeff_cm3 = 16 * g_val * h_val * r_val * np.sqrt(g_val * ht_val)
-        coeff_cm2 = -8 * (g_val**2) * ht_val * h_val * r_val
-        coeff_cm1 = 0  # There is no c_m^1 term in the expanded polynomial
-        coeff_const = -(g_val**2) * (h_val**2) * (r_val**2)
+    func_to_solve_cm = functools.partial(equation_for_cm, g=g, hlt=hl, hrt=hr)
+    initial_guess_cm = (np.sqrt(g * hl) + np.sqrt(g * hr))
+    c_m = fsolve(func_to_solve_cm, initial_guess_cm)
+    print("Obtained c_m: {}".format(c_m))
 
-        # Create a list of coefficients in descending order of power
-        # [coeff_x^n, coeff_x^(n-1), ..., coeff_x^1, coeff_x^0]
-        coefficients = [coeff_cm4, coeff_cm3, coeff_cm2, coeff_cm1, coeff_const]
+    return c_m[0]
 
-        print(f"\nNumerical Coefficients for the polynomial:")
-        print(f"c_m^4: {coeff_cm4}")
-        print(f"c_m^3: {coeff_cm3}")
-        print(f"c_m^2: {coeff_cm2}")
-        print(f"c_m^1: {coeff_cm1}")
-        print(f"c_m^0: {coeff_const}")
 
-        # Use numpy.roots to find the roots of the polynomial
-        numerical_solutions = np.roots(coefficients)
-        return numerical_solutions
-    except ValueError as ve:
-        print(f"Error calculating numerical solutions: {ve}")
-        print("This might happen if, for example, g * h_t is negative, leading to sqrt of a negative number.")
-        return None
-    except Exception as e:
-        print(f"An unexpected error occurred during numerical solving: {e}")
-        return None
-
-def dambreak_on_wet_no_friction_analytical(T=6, L=10, hl=0.005, hr=0.001, x0=5):
+def dambreak_on_wet_no_friction_analytical(t, x, L=10, hl=0.005, hr=0.001, x0=5):
     # Specifically designed to test SWE solver only
     # SWASHES
 
-    xat = lambda t: x0 - t*np.sqrt(hl)
-    xbt = lambda t: x0 + t*(2*np.sqrt(hl)-3*cm)
+    cm = solve_polynomial_numerically(hl, hr)
 
+    xat = lambda t: x0 - t*np.sqrt(g*hl)
+    xbt = lambda t: x0 + t*(2*np.sqrt(g*hl)-3*cm)
+    xct = lambda t: x0 + t*(2*cm**2*(np.sqrt(g*hl)-cm))/(cm**2-g*hr)
 
-def dambreak_on_wet_no_friction_builder(T=6, L=10, hl=0.005, hr=0.001, dx=0.05):
-    # Specifically designed to test SWE solver only
-    # SWASHES
-    a = 0
+    h_1 = lambda t, x: hl
+    h_2 = lambda t, x: (4/(9*g))*(np.sqrt(g*hl)-(x - x0)/(2*t))**2
+    h_3 = lambda t, x: cm**2/g
+    h_4 = lambda t, x: hr
+
+    u_1 = lambda t, x: 0
+    u_2 = lambda t, x: (2/3)*((x-x0)/t + np.sqrt(g*hl))
+    u_3 = lambda t, x: 2*(np.sqrt(g*hl)-cm)
+    u_4 = lambda t, x: 0
+
+    h = np.where(
+        x <= xat(t), h_1(t,x), np.where(
+            (xat(t) <= x) & (x <= xbt(t)), h_2(t,x), np.where(
+                (xbt(t) <= x) & (x <= xct(t)), h_3(t,x), np.where(
+                    xct(t) <= x, h_4(t,x), h_4(t,x)
+                )
+            )
+        )
+    )
+
+    u = np.where(
+        x <= xat(t), u_1(t,x), np.where(
+            (xat(t) <= x) & (x <= xbt(t)), u_2(t,x), np.where(
+                (xbt(t) <= x) & (x <= xct(t)), u_3(t,x), np.where(
+                    xct(t) <= x, u_4(t,x), u_4(t,x)
+                )
+            )
+        )
+    )
+
+    return h, u
+
+def dambreak_on_wet_no_friction_analytical_builder(Ll=0, Lr=10, hl=0.005, hr=0.001, x0=5, T=6, dh=0.01):
+    
+    A = 0.01           
+    
+    x_range = [Ll, Lr]
+    y_range = [0,.1]
+
+    x = np.arange(x_range[0], x_range[1]+dh, dh)
+    y = np.arange(y_range[0], y_range[1]+dh, dh)
+
+    X, Y = np.meshgrid(x, y, indexing="xy")
+
+    mask = (X <= x0)
+
+    h = np.where(mask, hl, hr)
+    u = np.zeros_like(h)
+    v = np.zeros_like(h)
+    z = np.zeros_like(h)
+
+    A_g = A*np.ones_like(X)
+
+    n = np.zeros_like(h)
+
+    x_range = [0, 10]
+
+    y_range = [0,.1]
+
+    inlet_polygon = [[x_range[0]-dh/2, y_range[0]-dh/2],
+                     [x_range[0]+dh/2, y_range[0]-dh/2],
+                     [x_range[0]+dh/2, y_range[1]+dh/2],
+                     [x_range[0]-dh/2, y_range[1]+dh/2]]
+    
+
+    outlet_polygon = [[x_range[1]-dh/2, y_range[0]-dh/2],
+                      [x_range[1]+dh/2, y_range[0]-dh/2],
+                      [x_range[1]+dh/2, y_range[1]+dh/2],
+                      [x_range[1]-dh/2, y_range[1]+dh/2]]
+    
+    params = {
+        "endTime" : T,
+        "cfl" : 0.5, 
+        "dh" : dh,
+        "h_init": h,
+        "u_init": u,
+        "v_init": v,
+        "z_init": z,
+        "roughness": n,
+        "A_g" : A_g,
+        "boundaries": {
+            "inlet": {
+                "type": "transmissive_bounds",
+                "polygon": inlet_polygon,
+                #         [h, q, z, qb] 
+                "values": [0.0,1.0,0.0,0.0],
+                "normal": [-1.0,0.0]
+            },
+            "outlet": {
+                "type": "transmissive_bounds",
+                "polygon": outlet_polygon,
+                #         [h, q, z, qb] 
+                "values": [0.0, 0.0, 0.0, 0.0],
+                "normal": [1.0,0.0]
+            }
+        },
+        "X": X,
+        "Y": Y
+    }
+
+    return params
+
+def ideal_case_ACM_FCM_paper_analytical(t=10):
+    A = 0.01           
+    alpha = 0.005
+    beta = 0.005
+    gamma = 2
+    
+    x_range = [0, 10]
+
+    dh = 0.1
+    x = np.arange(x_range[0], x_range[1]+dh, dh)
+    u_func = lambda x: np.sqrt(((alpha*x + beta)/(A))**(2/3))
+    q = np.ones_like(x)
+    u = u_func(x)
+    h = q/u
+    z0 = -(u**3 + 2*g*q)/(2*g*u) + gamma
+
+    zt = z0 - alpha*t
+
+    return zt, h, x
+
+def ideal_case_ACM_FCM_paper_builder(T=10):
+
+    # ideal case parameters https://doi.org/10.1016/j.advwatres.2021.103931
+    A = 0.01           
+    alpha = 0.005
+    beta = 0.005
+    gamma = 2
+    
+    x_range = [0, 10]
+    y_range = [0,.1]
+    dh = 0.1
+
+    inlet_polygon = [[x_range[0]-dh/2, y_range[0]-dh/2],
+                     [x_range[0]+dh/2, y_range[0]-dh/2],
+                     [x_range[0]+dh/2, y_range[1]+dh/2],
+                     [x_range[0]-dh/2, y_range[1]+dh/2]]
+    
+
+    outlet_polygon = [[x_range[1]-dh/2, y_range[0]-dh/2],
+                      [x_range[1]+dh/2, y_range[0]-dh/2],
+                      [x_range[1]+dh/2, y_range[1]+dh/2],
+                      [x_range[1]-dh/2, y_range[1]+dh/2]]
+
+    u_func = lambda x: np.sqrt(((alpha*x + beta)/(A))**(2/3))
+
+    x = np.arange(x_range[0], x_range[1]+dh, dh)
+    y = np.arange(y_range[0], y_range[1]+dh, dh)
+
+    X, Y = np.meshgrid(x, y, indexing="xy")
+    q = np.ones_like(X)
+    u = u_func(X)
+    v = np.zeros_like(u)
+    h = q/u
+    g = 9.81
+    z = -(u**3 + 2*g*q)/(2*g*u) + gamma
+
+    A_g = A*np.ones_like(X)
+
+    n = np.zeros_like(h)
+
+    params = {
+        "endTime" : T,
+        "outFreq" : 0.1,
+        "cfl" : 1, 
+        "dh" : dh,
+        "h_init": h,
+        "u_init": u,
+        "v_init": np.zeros_like(v),
+        "z_init": z,
+        "roughness": n,
+        "A_g" : A_g,
+        "boundaries": {
+            "inlet": {
+                "type": "constant_flux",
+                "polygon": inlet_polygon,
+                #         [h, q, z, qb] 
+                "values": [0.0,1.0,0.0,0.005],
+                "normal": [1.0,0.0]
+            },
+            #"outlet": {
+            #    "type": "normal_flow_depth",
+            #    "polygon": outlet_polygon,
+            #    #         [h, q, z, qb] 
+            #    "values": [0.0.6,1.0,0.0,0.0],
+            #    "normal": [1.0,0.0]
+            #},
+            "outlet_hydro": {
+                "type": "transmissive_bedload",
+                "polygon": outlet_polygon,
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [1.0,0.0]
+            },
+        },
+        "X": X,
+        "Y": Y
+    }
+
+    return params
+
+def symmetrical_dambreak_exner():
+    x_range = [-3, 3]
+    y_range = [0,0.01]
+    dh = 0.01
+    xi = 0.4
+    G = 0.01
+
+    x = np.arange(x_range[0], x_range[1]+dh, dh)
+    y = np.arange(y_range[0], y_range[1]+dh, dh)
+    X, Y = np.meshgrid(x, y, indexing="xy")
+
+    mask = (X <= 0.5) & (X >= -0.5)
+    h = np.where(mask, 1.0, 0.2)
+        
+    n = np.zeros_like(h)
+    u = np.zeros_like(h)
+    v = np.zeros_like(h)
+    z = np.ones_like(h)
+    A_g = (1/(1-xi))*G*np.ones_like(h)
+    
+
+    inlet_polygon = [[x_range[0]-dh/2, y_range[0]-dh/2],
+                     [x_range[0]+dh/2, y_range[0]-dh/2],
+                     [x_range[0]+dh/2, y_range[1]+dh/2],
+                     [x_range[0]-dh/2, y_range[1]+dh/2]]
+    
+
+    outlet_polygon = [[x_range[1]-dh/2, y_range[0]-dh/2],
+                      [x_range[1]+dh/2, y_range[0]-dh/2],
+                      [x_range[1]+dh/2, y_range[1]+dh/2],
+                      [x_range[1]-dh/2, y_range[1]+dh/2]]
+    
+    params = {
+        "endTime" : 1,
+        "outFreq" : 0.05,
+        "cfl" : 0.5, 
+        "dh" : dh,
+        "h_init": h,
+        "u_init": np.zeros_like(h),
+        "v_init": np.zeros_like(h),
+        "z_init": z,
+        "roughness": n,
+        "A_g" : A_g,
+        "boundaries": {
+            "inlet": {
+                "type": "transmissive_bounds",
+                "polygon": inlet_polygon,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [-1.0,0.0]
+            },
+            "outlet": {
+                "type": "transmissive_bounds",
+                "polygon": outlet_polygon,
+                #         [h, q, z, qb] 
+                "values": [0.,0.0,0.0,0.0],
+                "normal": [1.0,0.0]
+            }
+        },
+        "X": X,
+        "Y": Y
+    }
+
+    return params
 
 if __name__ == "__main__":
 
     print("--- Numerical Solution Example ---")
     # Example numerical values (you can change these)
-    g_example = 9.81  # Acceleration due to gravity
-    h_example = 5.0   # Height
-    r_example = 0.5   # Radius
-    ht_example = 2.0  # Another height parameter
+    g = 9.81  # Acceleration due to gravity
+    hl = 5.0   # Height
+    hr = 0.5   # Radius
 
-    print(f"Using example values: g={g_example}, h={h_example}, r={r_example}, h_t={ht_example}")
-    numerical_solutions_cm = solve_polynomial_numerically(g_example, h_example, r_example, ht_example)
+    numerical_solutions_cm = solve_polynomial_numerically(hl, hr)
 
     if numerical_solutions_cm is not None:
         print(f"\nNumerical Solutions for c_m:\n{numerical_solutions_cm}")
         # You might want to filter for real solutions depending on the context
-        real_solutions = [sol.real for sol in numerical_solutions_cm if np.isclose(sol.imag, 0)]
-        print(f"Real Solutions for c_m (if any):\n{real_solutions}")
-
-
-
-
-
+        real_solutions = [sol.real for sol in numerical_solutions_cm if np.isclose(sol.imag, 0) and sol.real > 0]
+        print(f"Real positive Solutions for c_m (if any):\n{real_solutions}")
     
+    print("Generating analytical solution")
 
+    xmin = 0 
+    xmax = 10
+    tmin = 0
+    tmax = 6
 
+    x = np.linspace(xmin, xmax, 100)
+    t = np.linspace(tmin, tmax, 100)
 
+    h, u = dambreak_on_wet_no_friction_analytical(6, x)
 
+    plt.plot(x, h)
+    plt.savefig("h_analytical_swashes.png")
+    plt.close()
+    plt.plot(x, h*u)
+    plt.savefig("hu_analytical_swashes.png")    
+    plt.close()

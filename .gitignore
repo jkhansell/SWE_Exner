@@ -1,0 +1,6 @@
+./debug
+./debug_swe
+*.png
+*.gif
+*.txt
+*__pycache__

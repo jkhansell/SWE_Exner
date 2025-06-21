@@ -457,3 +457,85 @@ def roe_solve_2D_jit(fluxes, h, hu, hv, z, G, dx, dt):
         flux = np.expand_dims(lambdas_E[...,i]*alphas[...,i],axis=2) * P[...,i]
         upwP += np.where(np.expand_dims(lambdas_E[...,i], axis=2) > 0.0, flux, 0.0)
         upwM += np.where(np.expand_dims(lambdas_E[...,i], axis=2) <= 0.0, flux, 0.0)"""
+
+
+    # Entropy correction Harten-Hyman
+
+    """# lambda_1
+    ei = uhati - np.sqrt(g*hi)
+    ej = uhatj - np.sqrt(g*hj)
+
+    mask_i = (ei < 0.0) & (ej > 0.0)
+
+    lambda_1 = np.where(mask_i, ei*(ej-lambda_1)/((ej-ei)+1e-12), lambda_1) # Replace with Lambda hat
+    lambda_E1 = np.where(mask_i, ej*(lambda_1-ei)/((ej-ei)+1e-12), 0.0)
+    
+    # lambda_3
+    ei = uhati + np.sqrt(g*hi)
+    ej = uhatj + np.sqrt(g*hj)
+
+    mask_j = (ei < 0.0) & (ej > 0.0)
+    
+    lambda_3 = np.where(mask_j, ej*(lambda_3-ei)/((ej-ei)+1e-12), lambda_3)      # Replace with Lambda hat
+    lambda_E3 = np.where(mask_j, ei*(ej-lambda_3)/((ej-ei)+1e-12), 0.0)
+
+    lambda_E2 = np.zeros_like(lambda_E3) 
+    
+    # Entropy correction Harten-Hyman
+
+    lambdas_E = np.stack([lambda_E1, lambda_E2, lambda_E3], axis=-1)
+
+    # Reconstruction of approximate solution
+    
+    h_istar = hi + alphas[...,0] - (betas[...,0]/lambdas[...,0])      # 1st intermediate state
+    h_j3star = hj - alphas[...,2] + (betas[...,2]/lambdas[...,2])     # 3rd intermediate state
+    
+    beta1min = -(hi+alphas[...,0])*np.abs(lambdas[...,0])
+    beta3min = -(hi-alphas[...,0])*lambdas[...,2]
+
+    dt = dx / np.max(np.abs(np.stack([lambdas[...,1], lambdas[...,2]])), axis=0)
+
+    mask_1 = (h_istar < 0.0) & (hi != 0.0)
+    mask_2 = (h_j3star < 0.0) & (hj != 0.0)
+
+    dtstar = np.where(mask_1, (dx / 2*lambdas[...,0])*(hi/(hi-h_istar)), dt) 
+    dt3star = np.where(mask_2, (dx / 2*lambdas[...,2])*(hj/(hj-h_j3star)), dt) 
+
+    mask = (h_istar < 0.0) & (h_j3star > 0.0) & (dtstar < dt)  
+    betas[...,0] = np.where(mask, np.where(-beta1min >= beta3min, beta1min, betas[...,0]), betas[...,0])
+    betas[...,2] = np.where(mask, -betas[...,0], betas[...,2])
+    
+    mask = (h_istar > 0.0) & (h_j3star < 0.0) & (dt3star < dt)  
+    betas[...,2] = np.where(mask, np.where(-beta3min >= beta3min, beta1min, betas[...,2]), betas[...,2])
+    betas[...,0] = np.where(mask, -betas[...,2], betas[...,0])
+
+    # Reconstruction of approximate solution
+
+
+    mask_1 = (np.isclose(hi, np.zeros_like(hi))) & (h_istar < 0.0) 
+    mask_2 = (np.isclose(hj, np.zeros_like(hj))) & (h_j3star < 0.0)
+
+    for i in range(lambdas.shape[-1]):
+        flux = np.expand_dims(lambdas[...,i]*alphas[...,i]-betas[...,i],axis=2) * P[...,i]
+        upwP += np.where(
+            np.expand_dims(mask_2, axis=2), 0.0, np.where(
+                np.expand_dims(mask_1,axis=2), flux, np.where(
+                    np.expand_dims(lambdas[...,i], axis=2) > 0.0, flux, 0.0
+                )
+            )
+        )
+
+        upwM += np.where(
+            np.expand_dims(mask_2,axis=2), flux, np.where(
+                np.expand_dims(mask_1,axis=2), 0.0, np.where(
+                    np.expand_dims(lambdas[...,i], axis=2) <= 0.0, flux, 0.0
+                )
+            )
+        )
+
+    for i in range(lambdas_E.shape[-1]):
+        flux = np.expand_dims(lambdas_E[...,i]*alphas[...,i],axis=2) * P[...,i]
+        upwP += np.where(np.expand_dims(lambdas_E[...,i], axis=2) > 0.0, flux, 0.0)
+        upwM += np.where(np.expand_dims(lambdas_E[...,i], axis=2) <= 0.0, flux, 0.0)
+
+    """
