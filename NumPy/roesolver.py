@@ -2,13 +2,19 @@ import numpy as np
 
 # Constants
 g = 9.81 # Gravity
+TOL_WETDRY = 1e-12
 
 def _get_theta(_lambda, utilde, ctilde):
     return 3*_lambda**2 - 4*utilde*_lambda + utilde**2 - ctilde**2
 
 def _get_approx_lambda(_lambda, atilde, utilde, ctilde):
     theta = _get_theta(_lambda, utilde, ctilde)
-    return (_lambda * theta - ctilde**2 * atilde * utilde) / (theta - ctilde**2*atilde)
+
+    numerator = _lambda * theta - ctilde**2 * atilde * utilde 
+    denominator = theta - ctilde**2*atilde 
+    denominator = np.where(denominator < 1e-4, ctilde**2*atilde, denominator)  
+
+    return numerator / denominator 
 
 def compute_dt_SWE(h,hu,hv,dx):
     dt_x = np.min(dx / (np.abs(hu/h) + np.sqrt(g*h)))
@@ -41,12 +47,11 @@ def compute_dt(si, sj, nx, ny, dx):
     vtilde = (vhati*sqrt_i + vhatj*sqrt_j)/(sqrt_i + sqrt_j)
     ctilde = np.sqrt(g*htilde)
     gtilde = 0.5 * (gi + gj)
-    atilde = gtilde*(uhati**2 + uhati*uhatj + uhatj**2 + vhati*vhatj)/np.sqrt(hi*hj) 
+    atilde = gtilde*(uhati**2 + uhati*uhatj + uhatj**2 + vhati*vhatj)/(np.sqrt(hi*hj)) 
     
     # calculate wave speeds 
 
     lambda_1 = utilde - ctilde
-    lambda_2 = utilde
     lambda_3 = utilde + ctilde
 
     lambda_approx_1 = _get_approx_lambda(lambda_1, atilde, utilde, ctilde)
@@ -114,6 +119,9 @@ def roe_solver(si, sj, nx, ny, dx):
     # Small epsilon to prevent division by zero or very small numbers
     epsilon = 1e-12
 
+    hi = np.where(hi > epsilon, hi, 0.0)
+    hj = np.where(hj > epsilon, hj, 0.0)
+
     sqrt_i = np.sqrt(hi)
     sqrt_j = np.sqrt(hj)
 
@@ -148,8 +156,6 @@ def roe_solver(si, sj, nx, ny, dx):
     lambda_2 = utilde
     lambda_3 = utilde + ctilde
 
-    lambdas = np.stack([lambda_1, lambda_2, lambda_3], axis=-1)
-
     # --- Right Eigenvector Matrix (P) in (h, hu_n, hv_t) basis ---
     # P[:, 0] is R_1 (left-going acoustic wave)
     # P[:, 1] is R_2 (contact discontinuity / shear wave)
@@ -164,15 +170,14 @@ def roe_solver(si, sj, nx, ny, dx):
     # Construct the elements of the inner matrix (before factoring out 1/(2c))
     denom = lambda_1-lambda_3
     
-    #P_inv = np.stack([
-    #    np.stack([-lambda_3/denom,      np.ones_like(utilde)/denom,     np.zeros_like(utilde)], axis=-1),
-    #    np.stack([-vtilde/ctilde,       np.zeros_like(utilde),          np.ones_like(utilde)/ctilde], axis=-1),
-    #    np.stack([lambda_1/denom,       -np.ones_like(utilde)/denom,    np.zeros_like(utilde)], axis=-1)
-    #], axis=-2)
-
+    P_inv = np.stack([
+        np.stack([-lambda_3/denom,      np.ones_like(utilde)/denom,     np.zeros_like(utilde)], axis=-1),
+        np.stack([-vtilde/ctilde,       np.zeros_like(utilde),          np.ones_like(utilde)/ctilde], axis=-1),
+        np.stack([lambda_1/denom,       -np.ones_like(utilde)/denom,    np.zeros_like(utilde)], axis=-1)
+    ], axis=-2)
 
     # Calculate Inverse of P
-    P_inv = np.linalg.inv(P)
+    #P_inv = np.linalg.inv(P)
 
     # Entropy correction Harten-Hyman
 
@@ -197,6 +202,8 @@ def roe_solver(si, sj, nx, ny, dx):
     lambda_E2 = np.zeros_like(lambda_E3) 
     lambdas_E = np.stack([lambda_E1, lambda_E2, lambda_E3], axis=-1)
     # Entropy correction Harten-Hyman
+
+    lambdas = np.stack([lambda_1, lambda_2, lambda_3], axis=-1)
 
     # --- Difference in Conservative Variables (dU = Uj - Ui) ---
     dh = hj - hi
@@ -285,8 +292,8 @@ def roe_solver(si, sj, nx, ny, dx):
     upwP = np.zeros_like(lambdas)
     upwM = np.zeros_like(lambdas)
 
-    mask_1 = (np.abs(hi) < epsilon) & (h_i1star < 0.0) 
-    mask_2 = (np.abs(hj) < epsilon) & (h_j3star < 0.0)
+    mask_1 = (hi < epsilon) & (h_i1star < 0.0) 
+    mask_2 = (hj < epsilon) & (h_j3star < 0.0)
 
     for i in range(lambdas.shape[-1]):
         flux = np.expand_dims(lambdas[...,i]*alphas[...,i]-betas[...,i],axis=2) * P[...,i]
@@ -316,7 +323,7 @@ def roe_solver(si, sj, nx, ny, dx):
                        [0, nx, -ny],
                        [0, ny,  nx]])
 
-    upwP = np.einsum('ji,...i->...j', Tk_inv, upwP) 
+    upwP = np.einsum('ji,...i->...j', Tk_inv, upwP)
     upwM = np.einsum('ji,...i->...j', Tk_inv, upwM)
 
     return upwP, upwM
@@ -394,6 +401,9 @@ def exner_solve(s1, s2,  nx, ny, dx):
     uhati = ui * nx + vi * ny   # Normal velocity component
     uhatj = uj * nx + vj * ny
 
+    #qbnhati = qb_xi * nx + qb_yi * ny
+    #qbnhatj = qb_xj * nx + qb_yj * ny
+
     utilde = (uhati * sqrt_i + uhatj * sqrt_j) / (sqrt_i + sqrt_j)
 
     umagi = (ui**2+vi**2)
@@ -412,7 +422,7 @@ def exner_solve(s1, s2,  nx, ny, dx):
     #dqbhat = qbhatL + qbhat + qbhatR
     #dqbhat = qb_nhatj - qb_nhati
 
-    lambda_4 = np.where(np.abs(dz) > 1e-10, dqbhat / dz, utilde)
+    lambda_4 = np.where(np.abs(dz) > 1e-8, dqbhat / dz, utilde)
 
     corrector_i = (gtilde - gi)*umagi*uhati
     corrector_j = (gtilde - gj)*umagj*uhatj
@@ -430,39 +440,47 @@ def exner_solve_2D(fluxes, h, hu, hv, z, G, dx):
     hvi_x = hv[:,:-1]
     zi_x =   z[:,:-1]
     gi_x =   G[:,:-1]
+    #qb_xi_x =   qb_x[:,:-1]
+    #qb_yi_x =   qb_y[:,:-1]
 
     hj_x =   h[:, 1:]
     huj_x = hu[:, 1:]
     hvj_x = hv[:, 1:]
     zj_x =   z[:, 1:]
     gj_x =   G[:, 1:]
+    #qb_xj_x = qb_x[:,1:]
+    #qb_yj_x = qb_y[:,1:]
 
     hi_y =   h[:-1,:]
     hui_y = hu[:-1,:]
     hvi_y = hv[:-1,:]
     zi_y =   z[:-1,:]
     gi_y =   G[:-1,:]
+    #qb_xi_y = qb_x[:-1,:]
+    #qb_yi_y = qb_y[:-1,:]
 
     hj_y =   h[1:, :]
     huj_y = hu[1:, :]
     hvj_y = hv[1:, :]
     zj_y =   z[1:, :]
     gj_y =   G[1:, :]
-    
+    #qb_xj_y = qb_x[1:,:]
+    #qb_yj_y = qb_y[1:,:]
+
     s1_x = np.stack([
-        hi_x,hui_x,hvi_x,zi_x,gi_x
+        hi_x,hui_x,hvi_x,zi_x,gi_x #,qb_xi_x,qb_yi_x
     ])
 
     s2_x = np.stack([
-        hj_x,huj_x,hvj_x,zj_x,gj_x
+        hj_x,huj_x,hvj_x,zj_x,gj_x #,qb_xj_x,qb_yj_x
     ])
     
     s1_y = np.stack([
-        hi_y,hui_y,hvi_y,zi_y,gi_y
+        hi_y,hui_y,hvi_y,zi_y,gi_y #,qb_xi_y,qb_yi_y
     ])
 
     s2_y = np.stack([
-        hj_y,huj_y,hvj_y,zj_y,gj_y
+        hj_y,huj_y,hvj_y,zj_y,gj_y #,qb_xj_y,qb_yj_y
     ])
 
     # Calculate the upwinded fluxes at the x-interfaces
@@ -474,7 +492,48 @@ def exner_solve_2D(fluxes, h, hu, hv, z, G, dx):
     # Calculate the upwinded fluxes at the y-interfaces
     F_y = exner_solve(s1_y, s2_y, 0, -1, dx)
 
-    fluxes[1:, :] -= F_y # F_y enters cell from its bottom
-    fluxes[:-1, :] += F_y # F_y leaves cell to its top
+    fluxes[1:, :] += F_y # F_y enters cell from its bottom
+    fluxes[:-1, :] -= F_y # F_y leaves cell to its top
 
     return fluxes
+
+def wet_dry_correction(h, z, hu, hv, masks, hmin):
+    ny, nx = h.shape
+
+    isB = np.any(masks, axis=0)[1:-1, 1:-1]
+
+    hij   = h[1:-1, 1:-1]
+    zij   = z[1:-1, 1:-1]
+
+    # Neighbor slices
+    h_ip1 = h[1:-1, 2:]
+    h_im1 = h[1:-1,:-2]
+    h_jp1 = h[2:, 1:-1]
+    h_jm1 = h[:-2,1:-1]
+
+    z_ip1 = z[1:-1, 2:]
+    z_im1 = z[1:-1,:-2]
+    z_jp1 = z[2:, 1:-1]
+    z_jm1 = z[:-2,1:-1]
+
+    # Mask for h >= hmin
+    wet_mask = hij >= hmin
+
+    # X-direction condition
+    cond_x = (
+        ((hij + zij < z_ip1) & (h_ip1 < TOL_WETDRY)) |
+        ((hij + zij < z_im1) & (h_im1 < TOL_WETDRY))
+    ) & wet_mask 
+     
+
+    # Y-direction condition
+    cond_y = (
+        ((hij + zij < z_jp1) & (h_jp1 < TOL_WETDRY)) |
+        ((hij + zij < z_jm1) & (h_jm1 < TOL_WETDRY))
+    ) & wet_mask
+
+    # Apply to hu, hv
+    hu[1:-1, 1:-1][cond_x] = 0.0 
+    hv[1:-1, 1:-1][cond_y] = 0.0
+
+    return hu, hv

@@ -85,7 +85,7 @@ def dambreak_on_wet_no_friction_analytical_builder(Ll=0, Lr=10, hl=0.005, hr=0.0
     h = np.where(mask, hl, hr)
     u = np.zeros_like(h)
     v = np.zeros_like(h)
-    z = np.zeros_like(h)
+    z = 2*np.ones_like(h)
 
     A_g = A*np.ones_like(X)
 
@@ -109,6 +109,7 @@ def dambreak_on_wet_no_friction_analytical_builder(Ll=0, Lr=10, hl=0.005, hr=0.0
     params = {
         "endTime" : T,
         "cfl" : 0.5, 
+        "outFreq" : 1,
         "dh" : dh,
         "h_init": h,
         "u_init": u,
@@ -138,37 +139,37 @@ def dambreak_on_wet_no_friction_analytical_builder(Ll=0, Lr=10, hl=0.005, hr=0.0
 
     return params
 
-def ideal_case_ACM_FCM_paper_analytical(t=10):
-    A = 0.01           
+def ideal_case_ACM_FCM_paper_analytical(t=10, dh=0.1):
+    A = 0.005           
     alpha = 0.005
     beta = 0.005
-    gamma = 2
-    
-    x_range = [0, 10]
+    gamma = 1
+    q0 = 3
 
-    dh = 0.1
+    x_range = [0, 7]
+
     x = np.arange(x_range[0], x_range[1]+dh, dh)
     u_func = lambda x: np.sqrt(((alpha*x + beta)/(A))**(2/3))
-    q = np.ones_like(x)
+    q = q0*np.ones_like(x)
     u = u_func(x)
     h = q/u
     z0 = -(u**3 + 2*g*q)/(2*g*u) + gamma
 
     zt = z0 - alpha*t
 
-    return zt, h, x
+    return zt, h, x, q
 
-def ideal_case_ACM_FCM_paper_builder(T=10):
+def ideal_case_ACM_FCM_paper_builder(T=10, dh=0.1):
 
     # ideal case parameters https://doi.org/10.1016/j.advwatres.2021.103931
-    A = 0.01           
+    A = 0.005           
     alpha = 0.005
     beta = 0.005
-    gamma = 2
+    gamma = 1
+    q0 = 3 
     
-    x_range = [0, 10]
-    y_range = [0,.1]
-    dh = 0.1
+    x_range = [0, 7]
+    y_range = [0, dh]
 
     inlet_polygon = [[x_range[0]-dh/2, y_range[0]-dh/2],
                      [x_range[0]+dh/2, y_range[0]-dh/2],
@@ -181,26 +182,32 @@ def ideal_case_ACM_FCM_paper_builder(T=10):
                       [x_range[1]+dh/2, y_range[1]+dh/2],
                       [x_range[1]-dh/2, y_range[1]+dh/2]]
 
-    u_func = lambda x: np.sqrt(((alpha*x + beta)/(A))**(2/3))
+    u_func = lambda x: ((alpha*x + beta)/A)**(1/3)
 
     x = np.arange(x_range[0], x_range[1]+dh, dh)
     y = np.arange(y_range[0], y_range[1]+dh, dh)
 
     X, Y = np.meshgrid(x, y, indexing="xy")
-    q = np.ones_like(X)
+    q = q0*np.ones_like(X)
     u = u_func(X)
     v = np.zeros_like(u)
     h = q/u
     g = 9.81
     z = -(u**3 + 2*g*q)/(2*g*u) + gamma
 
+    zt_inflow = lambda t: gamma - (u_func(x_range[0])**3 + 2*g*q0)/(2*g*u_func(x_range[0])) - alpha*t
+    zt_outflow = lambda t: gamma - (u_func(x_range[1])**3 + 2*g*q0)/(2*g*u_func(x_range[1])) - alpha*t
+
     A_g = A*np.ones_like(X)
 
     n = np.zeros_like(h)
 
+    h_outflow = q0/u_func(x_range[1])
+    h_inflow = q0/u_func(x_range[0])
+
     params = {
         "endTime" : T,
-        "outFreq" : 0.1,
+        "outFreq" : 11,
         "cfl" : 1, 
         "dh" : dh,
         "h_init": h,
@@ -211,25 +218,19 @@ def ideal_case_ACM_FCM_paper_builder(T=10):
         "A_g" : A_g,
         "boundaries": {
             "inlet": {
-                "type": "constant_flux",
+                "type": "Berthon_bounds",
                 "polygon": inlet_polygon,
                 #         [h, q, z, qb] 
-                "values": [0.0,1.0,0.0,0.005],
-                "normal": [1.0,0.0]
+                "values": [h_inflow, q0, zt_inflow, 0],
+                "normal": [1.0, 0.0]
             },
-            #"outlet": {
-            #    "type": "normal_flow_depth",
-            #    "polygon": outlet_polygon,
-            #    #         [h, q, z, qb] 
-            #    "values": [0.0.6,1.0,0.0,0.0],
-            #    "normal": [1.0,0.0]
-            #},
-            "outlet_hydro": {
-                "type": "transmissive_bedload",
+            "outlet": {
+                "type": "normal_flow_depth",
                 "polygon": outlet_polygon,
-                "values": [0.0,0.0,0.0,0.0],
-                "normal": [1.0,0.0]
-            },
+                #         [h, q, z, qb] 
+                "values": [h_outflow, q0, zt_outflow, 0],
+                "normal": [1.0, 0.0]
+            }
         },
         "X": X,
         "Y": Y
@@ -242,7 +243,7 @@ def symmetrical_dambreak_exner():
     y_range = [0,0.01]
     dh = 0.01
     xi = 0.4
-    G = 0.01
+    G = 0.1
 
     x = np.arange(x_range[0], x_range[1]+dh, dh)
     y = np.arange(y_range[0], y_range[1]+dh, dh)
@@ -255,7 +256,7 @@ def symmetrical_dambreak_exner():
     u = np.zeros_like(h)
     v = np.zeros_like(h)
     z = np.ones_like(h)
-    A_g = (1/(1-xi))*G*np.ones_like(h)
+    A_g = G*np.ones_like(h)
     
 
     inlet_polygon = [[x_range[0]-dh/2, y_range[0]-dh/2],
@@ -271,8 +272,8 @@ def symmetrical_dambreak_exner():
     
     params = {
         "endTime" : 1,
-        "outFreq" : 0.05,
-        "cfl" : 0.5, 
+        "outFreq" : 0.1,
+        "cfl" : 1, 
         "dh" : dh,
         "h_init": h,
         "u_init": np.zeros_like(h),
@@ -295,6 +296,186 @@ def symmetrical_dambreak_exner():
                 "values": [0.,0.0,0.0,0.0],
                 "normal": [1.0,0.0]
             }
+        },
+        "X": X,
+        "Y": Y
+    }
+
+    return params
+
+def symmetrical_dambreak_exner_2D():
+    x_range = [-6, 6]
+    y_range = [-6, 6]
+    dh = 0.1
+    xi = 0.4
+    G = 0.01
+
+    x = np.arange(x_range[0], x_range[1]+dh, dh)
+    y = np.arange(y_range[0], y_range[1]+dh, dh)
+    X, Y = np.meshgrid(x, y, indexing="xy")
+
+    mask = X**2 + Y**2 <= 1.2**2 
+    h = np.where(mask, 1.0, 0.0)
+        
+    n = np.zeros_like(h)
+    u = np.zeros_like(h)
+    v = np.zeros_like(h)
+    z = np.ones_like(h)
+    A_g = (1/(1-xi))*G*np.ones_like(h)
+    
+    polygon1 = [[x_range[0]-dh/2, y_range[0]-dh/2],
+                [x_range[0]+dh/2, y_range[0]-dh/2],
+                [x_range[0]+dh/2, y_range[1]+dh/2],
+                [x_range[0]-dh/2, y_range[1]+dh/2]]
+
+    polygon2 = [[x_range[1]-dh/2, y_range[0]-dh/2],
+                [x_range[1]+dh/2, y_range[0]-dh/2],
+                [x_range[1]+dh/2, y_range[1]+dh/2],
+                [x_range[1]-dh/2, y_range[1]+dh/2]]
+
+    polygon3 = [[x_range[0]-dh/2, y_range[0]-dh/2],
+                [x_range[1]+dh/2, y_range[0]-dh/2],
+                [x_range[1]+dh/2, y_range[0]+dh/2],
+                [x_range[0]-dh/2, y_range[0]+dh/2]]
+
+    polygon4 = [[x_range[0]-dh/2, y_range[1]-dh/2],
+                [x_range[1]+dh/2, y_range[1]-dh/2],
+                [x_range[1]+dh/2, y_range[1]+dh/2],
+                [x_range[0]-dh/2, y_range[1]+dh/2]]
+    
+    params = {
+        "endTime" : 4,
+        "outFreq" : 0.1,
+        "cfl" : 0.5, 
+        "dh" : dh,
+        "h_init": h,
+        "u_init": np.zeros_like(h),
+        "v_init": np.zeros_like(h),
+        "z_init": z,
+        "roughness": n,
+        "A_g" : A_g,
+        "boundaries": {
+            "outlet1": {
+                "type": "reflective_bounds",
+                "polygon": polygon1,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [-1.0,0.0]
+            },
+            "outlet2": {
+                "type": "reflective_bounds",
+                "polygon": polygon2,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [1.0,0.0]
+            },
+            "outlet3": {
+                "type": "reflective_bounds",
+                "polygon": polygon3,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [0.0,-1.0]
+            },
+            "outlet4": {
+                "type": "reflective_bounds",
+                "polygon": polygon4,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [0.0,1.0]
+            },
+        },
+        "X": X,
+        "Y": Y
+    }
+
+    return params
+
+def partial_dam_breach():
+    x_range = [0, 200]
+    y_range = [0, 200]
+    dh = 1
+    xi = 0.4
+    G = 0.01
+
+    x = np.arange(x_range[0], x_range[1]+dh, dh)
+    y = np.arange(y_range[0], y_range[1]+dh, dh)
+    X, Y = np.meshgrid(x, y, indexing="xy")
+
+    mask_z = ((X <= 102) & (X >= 98)) & ((Y <= 85) | (Y >= 115))
+
+    mask = (X < 100)
+    h = np.where(mask, 4.0, 1.0)
+        
+    n = np.zeros_like(h)
+    u = np.zeros_like(h)
+    v = np.zeros_like(h)
+    z = np.ones_like(h)
+
+    z[mask_z] = 100
+    h[mask_z] = 0
+    
+    A_g = (1/(1-xi))*G*np.ones_like(h)
+    
+    polygon1 = [[x_range[0]-dh/2, y_range[0]-dh/2],
+                [x_range[0]+dh/2, y_range[0]-dh/2],
+                [x_range[0]+dh/2, y_range[1]+dh/2],
+                [x_range[0]-dh/2, y_range[1]+dh/2]]
+
+    polygon2 = [[x_range[1]-dh/2, y_range[0]-dh/2],
+                [x_range[1]+dh/2, y_range[0]-dh/2],
+                [x_range[1]+dh/2, y_range[1]+dh/2],
+                [x_range[1]-dh/2, y_range[1]+dh/2]]
+
+    polygon3 = [[x_range[0]-dh/2, y_range[0]-dh/2],
+                [x_range[1]+dh/2, y_range[0]-dh/2],
+                [x_range[1]+dh/2, y_range[0]+dh/2],
+                [x_range[0]-dh/2, y_range[0]+dh/2]]
+
+    polygon4 = [[x_range[0]-dh/2, y_range[1]-dh/2],
+                [x_range[1]+dh/2, y_range[1]-dh/2],
+                [x_range[1]+dh/2, y_range[1]+dh/2],
+                [x_range[0]-dh/2, y_range[1]+dh/2]]
+    
+    params = {
+        "endTime" : 4,
+        "outFreq" : 0.1,
+        "cfl" : 0.5, 
+        "dh" : dh,
+        "h_init": h,
+        "u_init": np.zeros_like(h),
+        "v_init": np.zeros_like(h),
+        "z_init": z,
+        "roughness": n,
+        "A_g" : A_g,
+        "boundaries": {
+            "outlet1": {
+                "type": "reflective_bounds",
+                "polygon": polygon1,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [-1.0,0.0]
+            },
+            "outlet2": {
+                "type": "transmissive_bounds",
+                "polygon": polygon2,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [1.0,0.0]
+            },
+            "outlet3": {
+                "type": "reflective_bounds",
+                "polygon": polygon3,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [0.0,-1.0]
+            },
+            "outlet4": {
+                "type": "reflective_bounds",
+                "polygon": polygon4,
+                #         [h, q, z, qb] 
+                "values": [0.0,0.0,0.0,0.0],
+                "normal": [0.0,1.0]
+            },
         },
         "X": X,
         "Y": Y
@@ -336,3 +517,6 @@ if __name__ == "__main__":
     plt.plot(x, h*u)
     plt.savefig("hu_analytical_swashes.png")    
     plt.close()
+
+    
+    

@@ -1,7 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from roesolver import compute_dt_2D, roe_solve_2D, compute_dt_SWE, exner_solve_2D
+import time
+# Enable LaTeX rendering globally
+plt.rcParams['text.usetex'] = True
+# Own modules
 import case_builder
+
+# core methods
+from roesolver import compute_dt_2D, roe_solve_2D, compute_dt_SWE, exner_solve_2D, wet_dry_correction
 
 def point_in_polygon(point, polygon):
     x, y = point
@@ -39,7 +45,8 @@ class SWEExnerSim:
         self._initialize_fields()
         self._initialize_boundaries()
         self._apply_boundaries()
-    
+        self._debug_boundaries(0)
+
     def _initialize_simparams(self):
         self.endTime = self.params["endTime"]
         self.cfl = self.params["cfl"]
@@ -49,7 +56,6 @@ class SWEExnerSim:
 
     def _initialize_fields(self):
         # input fields
-        
         self.h = self.params["h_init"]
         self.hu = self.h*self.params["u_init"]
         self.hv = self.h*self.params["v_init"]
@@ -58,8 +64,7 @@ class SWEExnerSim:
         self.G = self.params["A_g"]
         self.n = self.params["roughness"]
 
-        self.qb_x = self.G*((self.hu/self.h)**2 + (self.hv/self.h)**2)*(self.hu/self.h)
-        self.qb_y = self.G*((self.hu/self.h)**2 + (self.hv/self.h)**2)*(self.hv/self.h)
+        self.update_sediment_fluxes()
 
         # define spatial parameters
         self.dt = 1
@@ -71,6 +76,7 @@ class SWEExnerSim:
         self.contributions_z = np.zeros_like(self.z)
     
     def _initialize_boundaries(self):
+        
         self.X = self.params["X"]
         self.Y = self.params["Y"]
         self.boundaries = self.params["boundaries"]
@@ -95,79 +101,81 @@ class SWEExnerSim:
     
     def _debug_boundaries(self, i):
 
-        self.qb_x = self.G*((self.hu/self.h)**2+(self.hv/self.h)**2)*(self.hu/self.h)
-        self.qb_y = self.G*((self.hu/self.h)**2+(self.hv/self.h)**2)*(self.hv/self.h)
         folder = "debug"
 
-        fig, ax = plt.subplots(2,1,figsize=(12,5))
-        im = ax[0].imshow(self.qb_x)
-        ax[1].plot(self.X[self.X.shape[0]//2,:], self.qb_x[self.qb_x.shape[0]//2,:])
-        fig.suptitle("Time: {:.3f}".format(self.etime))
-        ax[1].grid(alpha=0.25)
-        fig.savefig(folder+"/debug_qb_x{}.png".format(i))
-        plt.close()
-
-        fig, ax = plt.subplots(2,1,figsize=(12,5))
-        im = ax[0].imshow(self.qb_y)
-        ax[1].plot(self.X[self.X.shape[0]//2,:], self.qb_y[self.qb_y.shape[0]//2,:])
-        fig.suptitle("Time: {:.3f}".format(self.etime))
-        ax[1].grid(alpha=0.25)
-        fig.savefig(folder+"/debug_qb_y{}.png".format(i))
-        plt.close()
-
-
-        fig, ax = plt.subplots(2,1,figsize=(12,5))
-        ax[0].imshow(self.hu)
-        ax[1].plot(self.X[self.X.shape[0]//2,:], self.hu[self.hu.shape[0]//2,:])
-        fig.suptitle("Time: {:.3f}".format(self.etime))
-        ax[1].grid(alpha=0.25)
-        #plt.colorbar()
-        fig.savefig(folder+"/debug_hu{}.png".format(i))
-        plt.close()
-
-        fig, ax = plt.subplots(2,1,figsize=(12,5))
-        ax[0].imshow(self.hv)
-        ax[1].plot(self.X[self.X.shape[0]//2,:], self.hv[self.hv.shape[0]//2,:])
-        ax[1].grid(alpha=0.25)
-        fig.suptitle("Time: {:.3f}".format(self.etime))
-        #plt.colorbar()
-        fig.savefig(folder+"/debug_hv{}.png".format(i))
-        plt.close()
-
-        
-        fig, ax = plt.subplots(2,1,figsize=(12,5))
-        ax[0].imshow(self.h)
-        ax[1].plot(self.X[self.X.shape[0]//2,:], self.h[self.h.shape[0]//2,:]+self.z[self.z.shape[0]//2,:],label="h+z")
-        ax[1].plot(self.X[self.X.shape[0]//2,:], self.z[self.z.shape[0]//2,:],label="z")
-        ax[1].grid(alpha=0.25)
-        fig.suptitle("Time: {:.3f}".format(self.etime))
-        ax[1].legend()
-        ax[1].set_xlim(-2.75, 2.75)
-        ax[1].set_ylim(1.18, 1.8)
-        #plt.colorbar()
-        fig.savefig(folder+"/debug_h+z{}.png".format(i))
-        plt.close()
-
-    
         fig, ax = plt.subplots(2,1,figsize=(12,6.5),sharex=True)
         ax[0].plot(self.X[self.X.shape[0]//2,:], self.h[self.h.shape[0]//2,:]+self.z[self.z.shape[0]//2,:],c="blue",
                     marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
         ax[0].grid(alpha=0.25)
         ax[0].set_xlim(-2.75, 2.75)
-        ax[0].set_ylim(1.18, 1.8)
         fig.suptitle("Time: {:.3f}".format(self.etime))
-        ax[0].set_ylabel("Free Surf level (m)")
+        ax[0].set_ylabel(r"Free Surf level $h+z_b$ [m]")
+        
         ax[1].plot(self.X[self.X.shape[0]//2,:], self.z[self.z.shape[0]//2,:],c="blue",
                     marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
         ax[1].grid(alpha=0.25)
         ax[1].set_xlim(-2.75, 2.75)
-        ax[1].set_ylim(0.9, 1.05)
-        ax[1].set_ylabel("Bed level (m)")
+        ax[1].set_ylabel(r"Bed level $z_b$ [m]")
         fig.suptitle("Time: {:.3f}".format(self.etime))
-        #plt.colorbar()
-        fig.savefig(f"{folder}/debug_hz{i:06d}.png")
-        plt.close()
+        fig.savefig(f"{folder}/debug_hz{self.etime:.3f}.png",dpi=200)
+        plt.close(fig)
 
+        fig, ax = plt.subplots(2,1,figsize=(12,6.5),sharex=True)
+        ax[0].plot(self.X[self.X.shape[0]//2,:], self.hu[self.hu.shape[0]//2,:],c="blue",
+                    marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
+        ax[0].grid(alpha=0.25)
+        ax[0].set_xlim(-2.75, 2.75)
+        #ax[0].set_ylim(1.18, 1.8)
+        fig.suptitle("Time: {:.3f}".format(self.etime))
+        ax[0].set_ylabel(r"Momentum $x$ $[\mathrm{m}^2/\mathrm{s}]$")
+        ax[1].plot(self.X[self.X.shape[0]//2,:], self.hv[self.hv.shape[0]//2,:],c="blue",
+                    marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
+        ax[1].grid(alpha=0.25)
+        ax[1].set_xlim(-2.75, 2.75)
+        #ax[1].set_ylim(0.9, 1.05)
+        ax[0].set_ylabel(r"Momentum $y$ $[\mathrm{m}^2/\mathrm{s}]$")
+        fig.suptitle("Time: {:.3f}".format(self.etime))
+        fig.savefig(f"{folder}/debug_mom{self.etime:.3f}.png",dpi=200)
+        plt.close(fig)
+
+        """fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharex=True)
+
+        # Plot water depth h
+        im0 = ax[0].imshow(self.h, extent=[self.X[0, 0], self.X[0, -1], self.Y[0, 0], self.Y[-1, 0]], cmap="nipy_spectral")
+        cbar0 = fig.colorbar(im0, ax=ax[0])
+        cbar0.set_label("Water depth $h$")
+
+        # Plot bed height z
+        im1 = ax[1].imshow(self.z, extent=[self.X[0, 0], self.X[0, -1], self.Y[0, 0], self.Y[-1, 0]], cmap="nipy_spectral")
+        cbar1 = fig.colorbar(im1, ax=ax[1])
+        cbar1.set_label("Bed elevation $z_b$")
+
+        # Titles and layout
+        fig.suptitle("Time: {:.3f}".format(self.etime))
+
+        # Save the figure
+        fig.savefig(f"{folder}/debug_hz{i:06d}.png", dpi=200, bbox_inches='tight')
+        plt.close(fig)
+
+        fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharex=True)
+
+        # Plot water depth h
+        im0 = ax[0].imshow(self.hu, extent=[self.X[0, 0], self.X[0, -1], self.Y[0, 0], self.Y[-1, 0]], cmap="jet")
+        cbar0 = fig.colorbar(im0, ax=ax[0])
+        cbar0.set_label("Momentum $x$ $hu$")
+
+        # Plot bed height z
+        im1 = ax[1].imshow(self.hv, extent=[self.X[0, 0], self.X[0, -1], self.Y[0, 0], self.Y[-1, 0]], cmap="jet")
+        cbar1 = fig.colorbar(im1, ax=ax[1])
+        cbar1.set_label("Momentum $y$ $hv$")
+
+        # Titles and layout
+        fig.suptitle("Time: {:.3f}".format(self.etime))
+
+        # Save the figure
+        fig.savefig(f"{folder}/debug_mom{i:06d}.png", dpi=200, bbox_inches='tight')
+        plt.close(fig)"""
+        
     def _apply_boundaries(self):
         # This uses the Python 3.10+ match-case statement.
         for i, key in enumerate(self.boundaries.keys()):
@@ -185,6 +193,17 @@ class SWEExnerSim:
 
                     self.qb_x[self.masks[i]] = self.boundary_values[i][3]  #self.G[self.masks[i]]*(u**2+v**2)*u
                     self.qb_y[self.masks[i]] = self.boundary_values[i][3] #self.G[self.masks[i]]*(u**2+v**2)*v
+                
+                case "Berthon_bounds":
+                    h = self.boundary_values[i][0]
+                    qx = self.boundary_values[i][1] * self.normals[i][0]
+                    qy = self.boundary_values[i][1] * self.normals[i][1]
+
+                    self.h[self.masks[i]] = h
+                    self.hu[self.masks[i]] = qx
+                    self.hv[self.masks[i]] = qy
+
+                    self.z[self.masks[i]] = self.boundary_values[i][2](self.etime)
 
                 case "normal_flow_depth":
                     h = self.boundary_values[i][0]
@@ -195,11 +214,7 @@ class SWEExnerSim:
                     self.hu[self.masks[i]] = qx
                     self.hv[self.masks[i]] = qy
 
-                    u = qx/h
-                    v = qy/h
-
-                    self.qb_x[self.masks[i]] = self.G[self.masks[i]]*(u**2+v**2)*u
-                    self.qb_y[self.masks[i]] = self.G[self.masks[i]]*(u**2+v**2)*v
+                    self.z[self.masks[i]] = self.boundary_values[i][2](self.etime)
 
                 case "transmissive_bedload":
                     normal = self.normals[i]
@@ -278,14 +293,69 @@ class SWEExnerSim:
                     self.qb_y[self.masks[i]] = self.qb_y[interior_mask]
                     self.z[self.masks[i]] = self.z[interior_mask]
 
+                case "reflective_bounds":
+                    normal = self.normals[i]  # e.g., [1, 0] or [0, -1]
+                    
+                    # Shift opposite to normal to find interior cell
+                    shift = -np.rint(np.flip(np.array(normal))).astype(int)  
+                    
+                    boundary_cells = np.argwhere(self.masks[i])
+                    interior_cells = boundary_cells + shift
+
+                    Ny, Nx = self.masks.shape[1:] 
+                    interior_cells = np.clip(interior_cells, a_min=np.array([0, 0]), a_max=np.array([Ny - 1, Nx - 1]))
+
+                    interior_mask = np.zeros_like(self.masks[i], dtype=bool)
+                    interior_mask[interior_cells[:,0], interior_cells[:,1]] = True
+
+                    boundary_y, boundary_x = boundary_cells[:, 0], boundary_cells[:, 1]
+                    interior_y, interior_x = interior_cells[:, 0], interior_cells[:, 1]
+
+                    self.boundary_indices = (boundary_y, boundary_x)
+                    self.boundary_interior_map = (interior_y, interior_x)
+
+                    # Scalars: copied
+                    self.h[self.masks[i]] = self.h[interior_mask]
+                    self.z[self.masks[i]] = self.z[interior_mask]
+                    
+                    self.qb_x[self.masks[i]] = self.qb_x[interior_mask]
+                    self.qb_y[self.masks[i]] = self.qb_y[interior_mask]
+
+                    # Momentum: reflect normal component, preserve tangential
+                    nx, ny = normal
+
+                    hu_int = self.hu[interior_mask]
+                    hv_int = self.hv[interior_mask]
+
+                    # Reflect components
+                    self.hu[self.masks[i]] = hu_int * (1 - 2 * nx * nx)
+                    self.hv[self.masks[i]] = hv_int * (1 - 2 * ny * ny)
+
+                    # Sediment flux (if vectorial like momentum): handle similarly
+                    qb_x_int = self.qb_x[interior_mask]
+                    qb_y_int = self.qb_y[interior_mask]
+                    
+                    self.qb_x[self.masks[i]] = qb_x_int * (1 - 2 * nx * nx)
+                    self.qb_y[self.masks[i]] = qb_y_int * (1 - 2 * ny * ny)
+
     def compute_dt(self):
         self.dt = compute_dt_2D(self.h, self.hu, self.hv, self.z, self.G, self.dx)
         #self.dt = compute_dt_SWE(self.h, self.hu, self.hv, self.dx)
         self.dt *= self.cfl
 
     def update_sediment_fluxes(self):
-        self.qb_x = self.G*((self.hu/self.h)**2 + (self.hv/self.h)**2)*(self.hu/self.h)
-        self.qb_y = self.G*((self.hu/self.h)**2 + (self.hv/self.h)**2)*(self.hv/self.h)
+        h = self.h + self._eps
+        flux_x = self.G*((self.hu/h)**2 + (self.hv/h)**2)*(self.hu/h)
+        flux_y = self.G*((self.hu/h)**2 + (self.hv/h)**2)*(self.hv/h)
+
+        self.qb_x = np.where(self.h < self._eps, 0.0, flux_x)
+        self.qb_y = np.where(self.h < self._eps, 0.0, flux_y)
+
+
+
+
+    def wet_dry_correction(self):
+        self.hu, self.hv = wet_dry_correction(self.h, self.z, self.hu, self.hv, self.masks, 1e-4)
 
     def step_hydro(self):
         self.contributions= roe_solve_2D(
@@ -304,7 +374,8 @@ class SWEExnerSim:
 
     def step_exner(self):
         self.contributions_z = exner_solve_2D(
-            self.contributions_z, self.h, self.hu, self.hv, self.z, self.G, self.dx
+            self.contributions_z, self.h, self.hu, self.hv, 
+            self.z, self.G, self.dx
         )
 
         self.z -= self.dt*self.contributions_z/self.dx
@@ -322,8 +393,9 @@ class SWEExnerSim:
                 self.dt = next_target - self.etime
 
             self.step_hydro()
-            self.update_sediment_fluxes()
             self._apply_boundaries()
+            self.wet_dry_correction()
+            self.update_sediment_fluxes()
             self.step_exner()
 
             self.etime += self.dt
@@ -334,30 +406,141 @@ class SWEExnerSim:
                 print(f"Visualizing - Iteration: {iters}  Time: {self.etime:.9f}")
                 self._debug_boundaries(iters)
 
-            if iters % 250 == 0:
+            if iters % 1 == 0:
                 print(f"Iteration: {iters}  Time: {self.etime:.9f}")
                 print(f"Timestep:  {self.dt:.6f}")
-            # Event handling
+                # Event handling
 
 if __name__ == "__main__":
 
+    #params = case_builder.dambreak_on_wet_no_friction_analytical_builder(T=10)
     params = case_builder.symmetrical_dambreak_exner()
+
+    """zt_init, h_init, x, q_init = case_builder.ideal_case_ACM_FCM_paper_analytical(0)
+
+    anchor = (0.85, 0.85)
+
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(x, zt_init+h_init, linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x, params["h_init"][params["h_init"].shape[0]//2]+params["z_init"][params["z_init"].shape[0]//2], c="red", label="ACM")
+    ax.grid(alpha=0.25)
+    ax.set_ylabel(r"Water depth $h$ [m]")
+    ax.set_xlabel(r"Channel Length $x$ [m]")
+    fig.legend(bbox_to_anchor=anchor)
+    fig.savefig("h_initial.png", dpi=200)
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(x, q_init, linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x, params["h_init"][params["h_init"].shape[0]//2]*params["u_init"][params["u_init"].shape[0]//2], c="red", label="ACM")
+    ax.grid(alpha=0.25)
+    ax.set_ylabel(r"Discharge $hu$ [$\mathrm{m}^2/\mathrm{s}$]")
+    ax.set_xlabel(r"Channel Length $x$ [m]")
+    fig.legend(bbox_to_anchor=(0.9,0.25))
+    fig.savefig("hu_initial.png", dpi=200)
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(x, zt_init, linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x, params["z_init"][params["z_init"].shape[0]//2], c="red", label="ACM")
+    ax.grid(alpha=0.25)
+    ax.set_ylabel(r"Bed height $z$ [m]")
+    ax.set_xlabel(r"Channel Length $x$ [m]")
+    fig.legend(bbox_to_anchor=(0.9,0.25))
+    fig.savefig("z_initial.png", dpi=200)
+    plt.close()"""
+
+
 
     exnersim = SWEExnerSim(params)
     exnersim.evolve()
 
-    """fig, ax = plt.subplots(figsize=(12,5))
-    ax.plot(x, zt+h, label="Analytical")
-    ax.plot(x, exnersim.h[exnersim.h.shape[0]//2]+exnersim.z[exnersim.z.shape[0]//2], label="ACM")
+    """zt, h, x, q = case_builder.ideal_case_ACM_FCM_paper_analytical(10)
+
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(x, h, linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x, h_init, linestyle="dotted", linewidth=2, c="gray", label="Initial")
+    ax.plot(x, exnersim.h[exnersim.h.shape[0]//2], c="red", label="ACM")
     ax.grid(alpha=0.25)
-    fig.legend()
-    fig.savefig("h+z_evolved.png")
+    ax.set_ylabel(r"Water depth $h$ [m]")
+    ax.set_xlabel(r"Channel Length $x$ [m]")
+    fig.legend(bbox_to_anchor=anchor)
+    fig.savefig("h_evolved.png", dpi=200)
     plt.close()
 
-    fig, ax = plt.subplots(figsize=(12,5))
-    ax.plot(x, zt, label="Analytical")
-    ax.plot(x, exnersim.z[exnersim.z.shape[0]//2], label="ACM")
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(x, q, linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x, q_init, linestyle="dotted", linewidth=2, c="gray", label="Initial")
+    ax.plot(x, exnersim.hu[exnersim.hu.shape[0]//2], c="red", label="ACM")
     ax.grid(alpha=0.25)
-    fig.legend()
-    fig.savefig("z_evolved.png")
+    ax.set_ylim(2.9,3.02)
+    ax.set_ylabel(r"Discharge $hu$ [$\mathrm{m}^2/\mathrm{s}$]")
+    ax.set_xlabel(r"Channel Length $x$ [m]")
+    fig.legend(bbox_to_anchor=(0.9,0.3))
+    fig.savefig("hu_evolved.png", dpi=200)
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(x, zt, linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x, zt_init, linestyle="dotted", linewidth=2, c="gray", label="Initial")
+    ax.plot(x, exnersim.z[exnersim.z.shape[0]//2], c="red", label="ACM")
+    ax.grid(alpha=0.25)
+    ax.set_ylabel(r"Bed height $z$ [m]")
+    ax.set_xlabel(r"Channel Length $x$ [m]")
+    fig.legend(bbox_to_anchor=(0.9,0.3))
+    fig.savefig("z_evolved.png", dpi=200)
+    plt.close()
+
+
+    dhs = [0.1, 0.05, 0.025, 0.0125]
+    l1_norm_z = [] 
+    l2_norm_z = [] 
+    linf_norm_z = [] 
+
+    l1_norm_h = [] 
+    l2_norm_h = [] 
+    linf_norm_h = [] 
+
+    for dh in dhs:
+        params = case_builder.ideal_case_ACM_FCM_paper_builder(T=10, dh=dh)
+        zt, h, x, q = case_builder.ideal_case_ACM_FCM_paper_analytical(t=10, dh=dh)
+        
+        exnersim = SWEExnerSim(params)
+        exnersim.evolve()
+
+        z_error = zt - exnersim.z[exnersim.z.shape[0]//2]
+
+        l1_norm_z.append(np.sum(np.abs(z_error)))
+        l2_norm_z.append(np.sum(np.sqrt(z_error**2)))
+        linf_norm_z.append(np.max(np.abs(z_error)))
+
+        h_error = h - exnersim.h[exnersim.h.shape[0]//2]
+
+        l1_norm_h.append(np.sum(np.abs(h_error)))
+        l2_norm_h.append(np.sum(np.sqrt(h_error**2)))
+        linf_norm_h.append(np.max(np.abs(h_error)))
+
+    
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(dhs, l1_norm_h,   linestyle="dotted", marker=".", c="green", label=r"$L_1$ norm")
+    ax.plot(dhs, linf_norm_h, linestyle="dotted", marker=".", c="red", label=r"$L_\infty$ norm")
+    ax.grid(alpha=0.25, which="both")
+    ax.set_ylabel(r"$z$ error [m]")
+    ax.set_xlabel(r"$\Delta x$ [m]")
+    ax.set_yscale("log")
+    ax.set_xscale("log")
+    fig.legend(bbox_to_anchor=(0.9,0.3))
+    fig.savefig("h_norms.png", dpi=200)
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(dhs, l1_norm_z, linestyle="dotted", marker=".", c="green", label=r"$L_1$ norm")
+    ax.plot(dhs, linf_norm_z, linestyle="dotted", marker=".", c="red", label=r"$L_\infty$ norm")
+    ax.grid(alpha=0.25,which="both")
+    ax.set_ylabel(r"$h$ error [m]")
+    ax.set_xlabel(r"$\Delta x$ [m]")
+    ax.set_yscale("log")
+    ax.set_xscale("log")
+    fig.legend(bbox_to_anchor=(0.9,0.3))
+    fig.savefig("z_norms.png", dpi=200)
     plt.close()"""
