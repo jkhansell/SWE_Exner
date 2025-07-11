@@ -1,5 +1,6 @@
 ./debug
 ./debug_swe
+./NumPy/debug
 *.png
 *.gif
 *.txt
