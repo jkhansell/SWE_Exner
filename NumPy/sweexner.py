@@ -1,5 +1,8 @@
 import numpy as np
+
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+
 import time
 # Enable LaTeX rendering globally
 plt.rcParams['text.usetex'] = True
@@ -102,43 +105,51 @@ class SWEExnerSim:
     def _debug_boundaries(self, i):
 
         folder = "debug"
+        """
+        fig = plt.figure(figsize=(12, 6.5))  # Adjust overall figure size
+        gs = gridspec.GridSpec(2, 1, height_ratios=[1.7, 1])  # 3 rows: 2 for top, 1 for bottom
 
-        fig, ax = plt.subplots(2,1,figsize=(12,6.5),sharex=True)
-        ax[0].plot(self.X[self.X.shape[0]//2,:], self.h[self.h.shape[0]//2,:]+self.z[self.z.shape[0]//2,:],c="blue",
-                    marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
-        ax[0].grid(alpha=0.25)
-        ax[0].set_xlim(-2.75, 2.75)
-        fig.suptitle("Time: {:.3f}".format(self.etime))
-        ax[0].set_ylabel(r"Free Surf level $h+z_b$ [m]")
+        # Top plot takes rows 0 and 1
+        ax1 = fig.add_subplot(gs[0])
+        # Bottom plot takes row 2
+        ax2 = fig.add_subplot(gs[1], sharex=ax1)
+
+        #fig, ax = plt.subplots(2,1,figsize=(12,6.5),sharex=True)
+        ax1.plot(self.X[self.X.shape[0]//2,:], self.h[self.h.shape[0]//2,:]+self.z[self.z.shape[0]//2,:],c="blue", marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
+        ax1.grid(alpha=0.25)
+        ax1.set_ylabel(r"Free surface level $h+z_b$ [m]", fontsize=14)
+        ax1.set_ylim(1.15, 1.625)
         
-        ax[1].plot(self.X[self.X.shape[0]//2,:], self.z[self.z.shape[0]//2,:],c="blue",
-                    marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
-        ax[1].grid(alpha=0.25)
-        ax[1].set_xlim(-2.75, 2.75)
-        ax[1].set_ylabel(r"Bed level $z_b$ [m]")
-        fig.suptitle("Time: {:.3f}".format(self.etime))
+        ax2.plot(self.X[self.X.shape[0]//2,:], self.z[self.z.shape[0]//2,:],c="blue", marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
+        ax2.grid(alpha=0.25)
+        ax2.set_ylabel(r"Bed level $z_b$ [m]", fontsize=14)
+        ax2.set_xlabel(r"$x$ [m]", fontsize=14)
+        ax2.set_ylim(0.55, 1.4)
+        ax2.set_xlim(-2.65, 2.65)
+        
+        fig.suptitle("Time: {:.3f}".format(self.etime), fontsize=14)
         fig.savefig(f"{folder}/debug_hz{self.etime:.3f}.png",dpi=200)
+        
         plt.close(fig)
 
         fig, ax = plt.subplots(2,1,figsize=(12,6.5),sharex=True)
         ax[0].plot(self.X[self.X.shape[0]//2,:], self.hu[self.hu.shape[0]//2,:],c="blue",
                     marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
         ax[0].grid(alpha=0.25)
-        ax[0].set_xlim(-2.75, 2.75)
         #ax[0].set_ylim(1.18, 1.8)
         fig.suptitle("Time: {:.3f}".format(self.etime))
         ax[0].set_ylabel(r"Momentum $x$ $[\mathrm{m}^2/\mathrm{s}]$")
         ax[1].plot(self.X[self.X.shape[0]//2,:], self.hv[self.hv.shape[0]//2,:],c="blue",
                     marker=".",linewidth=1,markerfacecolor='none', markeredgecolor="blue")
         ax[1].grid(alpha=0.25)
-        ax[1].set_xlim(-2.75, 2.75)
         #ax[1].set_ylim(0.9, 1.05)
         ax[0].set_ylabel(r"Momentum $y$ $[\mathrm{m}^2/\mathrm{s}]$")
         fig.suptitle("Time: {:.3f}".format(self.etime))
         fig.savefig(f"{folder}/debug_mom{self.etime:.3f}.png",dpi=200)
         plt.close(fig)
 
-        """fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharex=True)
+        """
+        fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharex=True)
 
         # Plot water depth h
         im0 = ax[0].imshow(self.h, extent=[self.X[0, 0], self.X[0, -1], self.Y[0, 0], self.Y[-1, 0]], cmap="nipy_spectral")
@@ -154,7 +165,7 @@ class SWEExnerSim:
         fig.suptitle("Time: {:.3f}".format(self.etime))
 
         # Save the figure
-        fig.savefig(f"{folder}/debug_hz{i:06d}.png", dpi=200, bbox_inches='tight')
+        fig.savefig(f"{folder}/debug_hz{self.etime:.3f}.png", dpi=200, bbox_inches='tight')
         plt.close(fig)
 
         fig, ax = plt.subplots(1, 2, figsize=(12, 6), sharex=True)
@@ -173,8 +184,8 @@ class SWEExnerSim:
         fig.suptitle("Time: {:.3f}".format(self.etime))
 
         # Save the figure
-        fig.savefig(f"{folder}/debug_mom{i:06d}.png", dpi=200, bbox_inches='tight')
-        plt.close(fig)"""
+        fig.savefig(f"{folder}/debug_mom{self.etime:.3f}.png", dpi=200, bbox_inches='tight')
+        plt.close(fig)
         
     def _apply_boundaries(self):
         # This uses the Python 3.10+ match-case statement.
@@ -195,26 +206,47 @@ class SWEExnerSim:
                     self.qb_y[self.masks[i]] = self.boundary_values[i][3] #self.G[self.masks[i]]*(u**2+v**2)*v
                 
                 case "Berthon_bounds":
-                    h = self.boundary_values[i][0]
+                    #h = self.boundary_values[i][0]
                     qx = self.boundary_values[i][1] * self.normals[i][0]
                     qy = self.boundary_values[i][1] * self.normals[i][1]
 
-                    self.h[self.masks[i]] = h
+                    #self.h[self.masks[i]] = h
                     self.hu[self.masks[i]] = qx
                     self.hv[self.masks[i]] = qy
 
                     self.z[self.masks[i]] = self.boundary_values[i][2](self.etime)
 
                 case "normal_flow_depth":
-                    h = self.boundary_values[i][0]
+                    #h = self.boundary_values[i][0]
                     qx = self.boundary_values[i][1] * self.normals[i][0]
                     qy = self.boundary_values[i][1] * self.normals[i][1]
 
-                    self.h[self.masks[i]] = h
+                    #self.h[self.masks[i]] = h
                     self.hu[self.masks[i]] = qx
                     self.hv[self.masks[i]] = qy
 
-                    self.z[self.masks[i]] = self.boundary_values[i][2](self.etime)
+                    #self.z[self.masks[i]] = self.boundary_values[i][2](self.etime)
+
+                    normal = self.normals[i]
+                    # NumPy equivalent of np.rint and np.array
+                    shift = -np.rint(np.flip(np.array(normal))).astype(int) # shift inward
+                    
+                    # NumPy equivalent of np.argwhere
+                    boundary_cells = np.argwhere(self.masks[i])
+                    interior_cells = boundary_cells + shift
+                    
+                    Ny, Nx = self.masks.shape[1:]
+                    
+                    # NumPy equivalent of np.clip
+                    interior_cells = np.clip(interior_cells, a_min=np.array([0, 0]), a_max=np.array([Ny - 1, Nx - 1]))
+                    
+                    boundary_x, boundary_y = boundary_cells[:, 0], boundary_cells[:, 1]
+                    interior_x, interior_y = interior_cells[:, 0], interior_cells[:, 1]
+
+                    self.boundary_indices = (boundary_x, boundary_y)
+                    self.boundary_interior_map = (interior_x, interior_y)
+                    self.z[self.boundary_indices] = self.z[self.boundary_interior_map]
+                    #self.h[self.boundary_indices] = self.h[self.boundary_interior_map]
 
                 case "transmissive_bedload":
                     normal = self.normals[i]
@@ -352,8 +384,6 @@ class SWEExnerSim:
         self.qb_y = np.where(self.h < self._eps, 0.0, flux_y)
 
 
-
-
     def wet_dry_correction(self):
         self.hu, self.hv = wet_dry_correction(self.h, self.z, self.hu, self.hv, self.masks, 1e-4)
 
@@ -406,93 +436,154 @@ class SWEExnerSim:
                 print(f"Visualizing - Iteration: {iters}  Time: {self.etime:.9f}")
                 self._debug_boundaries(iters)
 
-            if iters % 1 == 0:
+            if iters % 1000 == 0:
                 print(f"Iteration: {iters}  Time: {self.etime:.9f}")
                 print(f"Timestep:  {self.dt:.6f}")
                 # Event handling
 
 if __name__ == "__main__":
 
-    #params = case_builder.dambreak_on_wet_no_friction_analytical_builder(T=10)
-    params = case_builder.symmetrical_dambreak_exner()
+    params = case_builder.symmetrical_dambreak_exner_2D()
+    exnersim = SWEExnerSim(params)
+    exnersim.evolve()
 
-    """zt_init, h_init, x, q_init = case_builder.ideal_case_ACM_FCM_paper_analytical(0)
+    """
+    params = case_builder.dambreak_on_wet_no_friction_analytical_builder(T=1, hl=1, hr=0.2)
+    x = params["X"][params["X"].shape[0]//2]
+    
+    exnersim = SWEExnerSim(params)
+    exnersim.evolve()
+
+    h, u = case_builder.dambreak_on_wet_no_friction_analytical(1, x, hl=1, hr=0.2)
+    h_init, u_init = case_builder.dambreak_on_wet_no_friction_analytical(0, x, hl=1, hr=0.2)
+    
+    anchor = (0.9, 0.875)
+
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(x, h, linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x, h_init, linestyle="dotted", linewidth=2, c="gray", label="Initial")
+    ax.plot(x, exnersim.h[exnersim.h.shape[0]//2], c="red", label="Numerical")
+    ax.grid(alpha=0.25)
+    ax.set_ylabel(r"Water depth $h$ $[\mathrm{m}]$", fontsize=14)
+    ax.set_xlabel(r"Channel Length $x$ $[\mathrm{m}]$", fontsize=14)
+    fig.legend(bbox_to_anchor=anchor, fontsize=12)
+    fig.savefig("h_evolved_swashes.png", dpi=200)
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(x, h*u, linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x, (params["h_init"]*params["u_init"])[params["h_init"].shape[0]//2], linestyle="dotted", linewidth=2, c="gray", label="Initial")
+    ax.plot(x, exnersim.hu[exnersim.h.shape[0]//2], c="red", label="Numerical")
+    ax.grid(alpha=0.25)
+    ax.set_ylabel(r"Momentum $hu$ $[\mathrm{m}^2/\mathrm{s}]$", fontsize=14)
+    ax.set_xlabel(r"Channel Length $x$ $[\mathrm{m}]$", fontsize=14)
+    fig.legend(bbox_to_anchor=anchor, fontsize=12)
+    fig.savefig("hu_evolved_swashes.png", dpi=200)
+    plt.close()
+
+    dhs = [0.1, 0.05, 0.025, 0.0125, 0.00625]
+
+    l1_norm_h = [] 
+    l2_norm_h = [] 
+    linf_norm_h = [] 
+
+    l1_norm_hu = [] 
+    l2_norm_hu = [] 
+    linf_norm_hu = [] 
+
+    for dh in dhs:
+        print(dhs)
+        params = case_builder.dambreak_on_wet_no_friction_analytical_builder(T=1, hl=1, hr=0.2, dh=dh)
+        x = params["X"][params["X"].shape[0]//2]
+
+        h, u = case_builder.dambreak_on_wet_no_friction_analytical(1, params["X"], hl=1, hr=0.2)
+        
+        exnersim = SWEExnerSim(params)
+        exnersim.evolve()
+
+        h_error = h - exnersim.h
+
+        l1_norm_h.append(dh*dh*np.sum(np.abs(h_error)))
+        linf_norm_h.append(np.max(np.abs(h_error)))
+
+        hu_error = h*u - exnersim.hu
+
+        l1_norm_hu.append(dh*dh*np.sum(np.abs(hu_error)))
+        linf_norm_hu.append(np.max(np.abs(hu_error)))
+ 
+    
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(l1_norm_h,   linestyle="dotted", marker=".",  label=r"$L_1$ norm $h$")
+    ax.plot(l1_norm_hu,   linestyle="dotted", marker=".", label=r"$L_1$ norm $hu$")
+    ax.grid(alpha=0.25, which="both")
+    ax.set_ylabel(r"$L_1$ error [m]", fontsize=14)
+    ax.set_xlabel(r"$\Delta x$ [m]", fontsize=14)
+    ax.set_yscale("log")
+    ax.set_xticks([i for i in range(len(dhs))])
+    ax.set_xticklabels([f"${dh}$" for dh in dhs], fontsize=12)
+    fig.legend(bbox_to_anchor=(0.9,0.875), fontsize=12)
+    fig.savefig("L1_norms_swashes.png", dpi=200)
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(linf_norm_h, linestyle="dotted", marker=".",  label=r"$L_\infty$ norm $h$")
+    ax.plot(linf_norm_hu, linestyle="dotted", marker=".", label=r"$L_\infty$ norm $hu$")
+    ax.grid(alpha=0.25, which="both")
+    ax.set_ylabel(r"$L_\infty$ error [m]", fontsize=14)
+    ax.set_xlabel(r"$\Delta x$ [m]", fontsize=14)
+    ax.set_yscale("log")
+    ax.set_xticks([i for i in range(len(dhs))])
+    ax.set_xticklabels([f"${dh}$" for dh in dhs], fontsize=12)
+    fig.legend(bbox_to_anchor=(0.9,0.5), fontsize=12)
+    fig.savefig("Linf_norms_swashes.png", dpi=200)
+    plt.close()
+
+    params = case_builder.ideal_case_ACM_FCM_paper_builder(T=10, dh=0.05)
+    zt_init, h_init, x, q_init = case_builder.ideal_case_ACM_FCM_paper_analytical(params["X"],0)
 
     anchor = (0.85, 0.85)
-
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(x, zt_init+h_init, linestyle="dashed", linewidth=3, c="black", label="Analytical")
-    ax.plot(x, params["h_init"][params["h_init"].shape[0]//2]+params["z_init"][params["z_init"].shape[0]//2], c="red", label="ACM")
-    ax.grid(alpha=0.25)
-    ax.set_ylabel(r"Water depth $h$ [m]")
-    ax.set_xlabel(r"Channel Length $x$ [m]")
-    fig.legend(bbox_to_anchor=anchor)
-    fig.savefig("h_initial.png", dpi=200)
-    plt.close()
-
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(x, q_init, linestyle="dashed", linewidth=3, c="black", label="Analytical")
-    ax.plot(x, params["h_init"][params["h_init"].shape[0]//2]*params["u_init"][params["u_init"].shape[0]//2], c="red", label="ACM")
-    ax.grid(alpha=0.25)
-    ax.set_ylabel(r"Discharge $hu$ [$\mathrm{m}^2/\mathrm{s}$]")
-    ax.set_xlabel(r"Channel Length $x$ [m]")
-    fig.legend(bbox_to_anchor=(0.9,0.25))
-    fig.savefig("hu_initial.png", dpi=200)
-    plt.close()
-
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(x, zt_init, linestyle="dashed", linewidth=3, c="black", label="Analytical")
-    ax.plot(x, params["z_init"][params["z_init"].shape[0]//2], c="red", label="ACM")
-    ax.grid(alpha=0.25)
-    ax.set_ylabel(r"Bed height $z$ [m]")
-    ax.set_xlabel(r"Channel Length $x$ [m]")
-    fig.legend(bbox_to_anchor=(0.9,0.25))
-    fig.savefig("z_initial.png", dpi=200)
-    plt.close()"""
-
-
 
     exnersim = SWEExnerSim(params)
     exnersim.evolve()
 
-    """zt, h, x, q = case_builder.ideal_case_ACM_FCM_paper_analytical(10)
+    zt, h, x, q = case_builder.ideal_case_ACM_FCM_paper_analytical(params["X"], 10)
 
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(x, h, linestyle="dashed", linewidth=3, c="black", label="Analytical")
-    ax.plot(x, h_init, linestyle="dotted", linewidth=2, c="gray", label="Initial")
-    ax.plot(x, exnersim.h[exnersim.h.shape[0]//2], c="red", label="ACM")
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(x[exnersim.h.shape[0]//2], h[exnersim.h.shape[0]//2], linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x[exnersim.h.shape[0]//2], h_init[exnersim.h.shape[0]//2], linestyle="dotted", linewidth=2, c="gray", label="Initial")
+    ax.plot(x[exnersim.h.shape[0]//2], exnersim.h[exnersim.h.shape[0]//2], c="red", label="Numerical")
     ax.grid(alpha=0.25)
-    ax.set_ylabel(r"Water depth $h$ [m]")
-    ax.set_xlabel(r"Channel Length $x$ [m]")
-    fig.legend(bbox_to_anchor=anchor)
+    ax.set_ylabel(r"Water depth $h$ [m]", fontsize=14)
+    ax.set_xlabel(r"Channel Length $x$ [m]", fontsize=14)
+    fig.legend(bbox_to_anchor=anchor, fontsize=12)
     fig.savefig("h_evolved.png", dpi=200)
     plt.close()
 
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(x, q, linestyle="dashed", linewidth=3, c="black", label="Analytical")
-    ax.plot(x, q_init, linestyle="dotted", linewidth=2, c="gray", label="Initial")
-    ax.plot(x, exnersim.hu[exnersim.hu.shape[0]//2], c="red", label="ACM")
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(x[exnersim.hu.shape[0]//2], q[exnersim.hu.shape[0]//2], linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x[exnersim.hu.shape[0]//2], q_init[exnersim.hu.shape[0]//2], linestyle="dotted", linewidth=2, c="gray", label="Initial")
+    ax.plot(x[exnersim.hu.shape[0]//2], exnersim.hu[exnersim.hu.shape[0]//2], c="red", label="Numerical")
     ax.grid(alpha=0.25)
     ax.set_ylim(2.9,3.02)
-    ax.set_ylabel(r"Discharge $hu$ [$\mathrm{m}^2/\mathrm{s}$]")
-    ax.set_xlabel(r"Channel Length $x$ [m]")
-    fig.legend(bbox_to_anchor=(0.9,0.3))
+    ax.set_ylabel(r"Discharge $hu$ [$\mathrm{m}^2/\mathrm{s}$]", fontsize=14)
+    ax.set_xlabel(r"Channel Length $x$ [m]", fontsize=14)
+    fig.legend(bbox_to_anchor=(0.9,0.3), fontsize=12)
     fig.savefig("hu_evolved.png", dpi=200)
     plt.close()
 
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(x, zt, linestyle="dashed", linewidth=3, c="black", label="Analytical")
-    ax.plot(x, zt_init, linestyle="dotted", linewidth=2, c="gray", label="Initial")
-    ax.plot(x, exnersim.z[exnersim.z.shape[0]//2], c="red", label="ACM")
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(x[exnersim.z.shape[0]//2], zt[exnersim.z.shape[0]//2], linestyle="dashed", linewidth=3, c="black", label="Analytical")
+    ax.plot(x[exnersim.z.shape[0]//2], zt_init[exnersim.z.shape[0]//2], linestyle="dotted", linewidth=2, c="gray", label="Initial")
+    ax.plot(x[exnersim.z.shape[0]//2], exnersim.z[exnersim.z.shape[0]//2], c="red", label="Numerical")
     ax.grid(alpha=0.25)
-    ax.set_ylabel(r"Bed height $z$ [m]")
-    ax.set_xlabel(r"Channel Length $x$ [m]")
-    fig.legend(bbox_to_anchor=(0.9,0.3))
+    ax.set_ylabel(r"Bed height $z$ [m]", fontsize=14)
+    ax.set_xlabel(r"Channel Length $x$ [m]", fontsize=14)
+    fig.legend(bbox_to_anchor=(0.9,0.3), fontsize=12)
     fig.savefig("z_evolved.png", dpi=200)
     plt.close()
 
-
-    dhs = [0.1, 0.05, 0.025, 0.0125]
+    
+    dhs = [0.1, 0.05, 0.025, 0.0125, 0.00625]
     l1_norm_z = [] 
     l2_norm_z = [] 
     linf_norm_z = [] 
@@ -502,45 +593,47 @@ if __name__ == "__main__":
     linf_norm_h = [] 
 
     for dh in dhs:
+        print(dh)
+
         params = case_builder.ideal_case_ACM_FCM_paper_builder(T=10, dh=dh)
-        zt, h, x, q = case_builder.ideal_case_ACM_FCM_paper_analytical(t=10, dh=dh)
+        zt, h, x, q = case_builder.ideal_case_ACM_FCM_paper_analytical(params["X"], t=10, dh=dh)
         
         exnersim = SWEExnerSim(params)
         exnersim.evolve()
 
-        z_error = zt - exnersim.z[exnersim.z.shape[0]//2]
+        z_error = zt - exnersim.z
 
-        l1_norm_z.append(np.sum(np.abs(z_error)))
-        l2_norm_z.append(np.sum(np.sqrt(z_error**2)))
+        l1_norm_z.append(dh*dh*np.sum(np.abs(z_error)))
         linf_norm_z.append(np.max(np.abs(z_error)))
 
-        h_error = h - exnersim.h[exnersim.h.shape[0]//2]
+        h_error = h - exnersim.h
 
-        l1_norm_h.append(np.sum(np.abs(h_error)))
-        l2_norm_h.append(np.sum(np.sqrt(h_error**2)))
-        linf_norm_h.append(np.max(np.abs(h_error)))
-
+        l1_norm_h.append(dh*dh*np.sum(np.abs(h_error)))
+        linf_norm_h.append(np.max(np.abs(h_error)))  
     
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(dhs, l1_norm_h,   linestyle="dotted", marker=".", c="green", label=r"$L_1$ norm")
-    ax.plot(dhs, linf_norm_h, linestyle="dotted", marker=".", c="red", label=r"$L_\infty$ norm")
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(l1_norm_h,   linestyle="dotted", marker=".", label=r"$L_1$ norm $h$")
+    ax.plot(l1_norm_z, linestyle="dotted", marker=".", label=r"$L_1$ norm $z_b$")
     ax.grid(alpha=0.25, which="both")
-    ax.set_ylabel(r"$z$ error [m]")
-    ax.set_xlabel(r"$\Delta x$ [m]")
+    ax.set_ylabel(r"$L_1$ error [m]", fontsize=14)
+    ax.set_xlabel(r"$\Delta x$ [m]", fontsize=14)
     ax.set_yscale("log")
-    ax.set_xscale("log")
-    fig.legend(bbox_to_anchor=(0.9,0.3))
-    fig.savefig("h_norms.png", dpi=200)
+    ax.set_xticks([i for i in range(len(dhs))])
+    ax.set_xticklabels([f"${dh}$" for dh in dhs], fontsize=12)
+    fig.legend(bbox_to_anchor=(0.9,0.825), fontsize=12)
+    fig.savefig("L1_norms.png", dpi=200)
     plt.close()
 
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(dhs, l1_norm_z, linestyle="dotted", marker=".", c="green", label=r"$L_1$ norm")
-    ax.plot(dhs, linf_norm_z, linestyle="dotted", marker=".", c="red", label=r"$L_\infty$ norm")
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(linf_norm_h, linestyle="dotted", marker=".", label=r"$L_\infty$ norm $h$")
+    ax.plot(linf_norm_z, linestyle="dotted", marker=".", label=r"$L_\infty$ norm $z_b$")
     ax.grid(alpha=0.25,which="both")
-    ax.set_ylabel(r"$h$ error [m]")
-    ax.set_xlabel(r"$\Delta x$ [m]")
+    ax.set_ylabel(r"$L_\infty$ error [m]", fontsize=14)
+    ax.set_xlabel(r"$\Delta x$ [m]", fontsize=14)
     ax.set_yscale("log")
-    ax.set_xscale("log")
-    fig.legend(bbox_to_anchor=(0.9,0.3))
-    fig.savefig("z_norms.png", dpi=200)
-    plt.close()"""
+    ax.set_xticks([i for i in range(len(dhs))])
+    ax.set_xticklabels([f"${dh}$" for dh in dhs], fontsize=12)
+    fig.legend(bbox_to_anchor=(0.9,0.825), fontsize=12)
+    fig.savefig("Linf_norms.png", dpi=200)
+    plt.close()
+    """

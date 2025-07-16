@@ -12,9 +12,9 @@ def _get_approx_lambda(_lambda, atilde, utilde, ctilde):
 
     numerator = _lambda * theta - ctilde**2 * atilde * utilde 
     denominator = theta - ctilde**2*atilde 
-    denominator = np.where(denominator < 1e-4, ctilde**2*atilde, denominator)  
+    denominator = np.where(denominator < 1e-2, ctilde**2*atilde, denominator)  
 
-    return numerator / denominator 
+    return numerator / denominator
 
 def compute_dt_SWE(h,hu,hv,dx):
     dt_x = np.min(dx / (np.abs(hu/h) + np.sqrt(g*h)))
@@ -156,29 +156,6 @@ def roe_solver(si, sj, nx, ny, dx):
     lambda_2 = utilde
     lambda_3 = utilde + ctilde
 
-    # --- Right Eigenvector Matrix (P) in (h, hu_n, hv_t) basis ---
-    # P[:, 0] is R_1 (left-going acoustic wave)
-    # P[:, 1] is R_2 (contact discontinuity / shear wave)
-    # P[:, 2] is R_3 (right-going acoustic wave)
-
-    P = np.stack([
-        np.stack([np.ones_like(vtilde), np.zeros_like(vtilde), np.ones_like(vtilde)],axis=-1),
-        np.stack([lambda_1,             np.zeros_like(vtilde),             lambda_3],axis=-1),
-        np.stack([vtilde,               ctilde,                              vtilde],axis=-1)
-    ], axis=-2)
-
-    # Construct the elements of the inner matrix (before factoring out 1/(2c))
-    denom = lambda_1-lambda_3
-    
-    P_inv = np.stack([
-        np.stack([-lambda_3/denom,      np.ones_like(utilde)/denom,     np.zeros_like(utilde)], axis=-1),
-        np.stack([-vtilde/ctilde,       np.zeros_like(utilde),          np.ones_like(utilde)/ctilde], axis=-1),
-        np.stack([lambda_1/denom,       -np.ones_like(utilde)/denom,    np.zeros_like(utilde)], axis=-1)
-    ], axis=-2)
-
-    # Calculate Inverse of P
-    #P_inv = np.linalg.inv(P)
-
     # Entropy correction Harten-Hyman
 
     # lambda_1
@@ -205,6 +182,29 @@ def roe_solver(si, sj, nx, ny, dx):
 
     lambdas = np.stack([lambda_1, lambda_2, lambda_3], axis=-1)
 
+    # --- Right Eigenvector Matrix (P) in (h, hu_n, hv_t) basis ---
+    # P[:, 0] is R_1 (left-going acoustic wave)
+    # P[:, 1] is R_2 (contact discontinuity / shear wave)
+    # P[:, 2] is R_3 (right-going acoustic wave)
+
+    P = np.stack([
+        np.stack([np.ones_like(vtilde), np.zeros_like(vtilde), np.ones_like(vtilde)],axis=-1),
+        np.stack([lambda_1,             np.zeros_like(vtilde),             lambda_3],axis=-1),
+        np.stack([vtilde,               ctilde,                              vtilde],axis=-1)
+    ], axis=-2)
+
+    # Construct the elements of the inner matrix (before factoring out 1/(2c))
+    denom = lambda_1-lambda_3
+    
+    P_inv = np.stack([
+        np.stack([-lambda_3/denom,      np.ones_like(utilde)/denom,     np.zeros_like(utilde)], axis=-1),
+        np.stack([-vtilde/ctilde,       np.zeros_like(utilde),          np.ones_like(utilde)/ctilde], axis=-1),
+        np.stack([lambda_1/denom,       -np.ones_like(utilde)/denom,    np.zeros_like(utilde)], axis=-1)
+    ], axis=-2)
+
+    # Calculate Inverse of P
+    #P_inv = np.linalg.inv(P)
+
     # --- Difference in Conservative Variables (dU = Uj - Ui) ---
     dh = hj - hi
     # Note: dhu and dhv here are differences in normal and tangential momentum, not global.
@@ -216,11 +216,6 @@ def roe_solver(si, sj, nx, ny, dx):
     # --- Wave Strengths (alphas) ---
     # alphas = P_inv * dU
     alphas = np.einsum("...ji,...i->...j", P_inv, dU)
-    
-    #alpha_1 = 0.5*(-lambda_1*dh - dhu)/ctilde 
-    #alpha_2 = (dhv - vtilde*dh)/ctilde
-    #alpha_3 = 0.5*(lambda_3*dh + dhu)/ctilde
-    #alphas = np.stack([alpha_1, alpha_2, alpha_3], axis=-1)
 
     # --- Source Terms ---
     # Based on "http://dx.doi.org/10.1016/j.jcp.2010.02.016" 
@@ -258,18 +253,14 @@ def roe_solver(si, sj, nx, ny, dx):
         np.zeros_like(htilde)
     ], axis=-1)
 
-    #beta_1 = -0.5*(thrust - tau)/ctilde
-    #beta_2 = np.zeros_like(beta_1)
-    #beta_3 = -beta_1.copy()
     betas = np.einsum("...ji,...i->...j", P_inv, Tn)
-    #betas = np.stack([beta_1, beta_2, beta_3], axis=-1)
 
     # Reconstruction of approximate solution
     
     h_i1star = hi + alphas[...,0] - (betas[...,0]/lambdas[...,0])      # 1st intermediate state
     h_j3star = hj - alphas[...,2] + (betas[...,2]/lambdas[...,2])     # 3rd intermediate state
        
-    beta1min = -(hi+alphas[...,0])*np.abs(lambdas[...,0])
+    """beta1min = -(hi+alphas[...,0])*np.abs(lambdas[...,0])
     beta3min = -(hi-alphas[...,0])*np.abs(lambdas[...,2])
 
     dt = dx / np.max(np.abs(lambdas), axis=2)
@@ -288,7 +279,8 @@ def roe_solver(si, sj, nx, ny, dx):
     betas[...,2] = np.where(mask, np.where(-beta3min >= beta3min, beta1min, betas[...,2]), betas[...,2])
     betas[...,0] = np.where(mask, -betas[...,2], betas[...,0])
 
-    # Reconstruction of approximate solution
+    # Reconstruction of approximate solution"""
+
     upwP = np.zeros_like(lambdas)
     upwM = np.zeros_like(lambdas)
 
@@ -391,11 +383,11 @@ def exner_solve(s1, s2,  nx, ny, dx):
     sqrt_j = np.sqrt(hj)
 
     # Calculate velocities, handling dry beds
-    ui = np.where(hi > 1e-6, hui/hi, 0.0)
-    vi = np.where(hi > 1e-6, hvi/hi, 0.0)
+    ui = np.where(hi > 1e-8, hui/hi, 0.0)
+    vi = np.where(hi > 1e-8, hvi/hi, 0.0)
 
-    uj = np.where(hj > 1e-6, huj/hj, 0.0)
-    vj = np.where(hj > 1e-6, hvj/hj, 0.0)
+    uj = np.where(hj > 1e-8, huj/hj, 0.0)
+    vj = np.where(hj > 1e-8, hvj/hj, 0.0)
 
     # --- Rotate problem to (normal, tangential) coordinate frame ---
     uhati = ui * nx + vi * ny   # Normal velocity component
@@ -422,7 +414,7 @@ def exner_solve(s1, s2,  nx, ny, dx):
     #dqbhat = qbhatL + qbhat + qbhatR
     #dqbhat = qb_nhatj - qb_nhati
 
-    lambda_4 = np.where(np.abs(dz) > 1e-8, dqbhat / dz, utilde)
+    lambda_4 = np.where(np.abs(dz) > 1e-6, dqbhat / dz, utilde)
 
     corrector_i = (gtilde - gi)*umagi*uhati
     corrector_j = (gtilde - gj)*umagj*uhatj
@@ -492,8 +484,8 @@ def exner_solve_2D(fluxes, h, hu, hv, z, G, dx):
     # Calculate the upwinded fluxes at the y-interfaces
     F_y = exner_solve(s1_y, s2_y, 0, -1, dx)
 
-    fluxes[1:, :] += F_y # F_y enters cell from its bottom
-    fluxes[:-1, :] -= F_y # F_y leaves cell to its top
+    fluxes[1:, :] -= F_y # F_y enters cell from its bottom
+    fluxes[:-1, :] += F_y # F_y leaves cell to its top
 
     return fluxes
 

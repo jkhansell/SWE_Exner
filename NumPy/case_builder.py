@@ -2,6 +2,7 @@ import numpy as np
 from scipy.optimize import fsolve
 import matplotlib.pyplot as plt
 import functools
+import scipy.integrate as integrate
 
 # Dam break on a wet domain without friction
 # https://arxiv.org/pdf/1110.0288
@@ -70,7 +71,7 @@ def dambreak_on_wet_no_friction_analytical(t, x, L=10, hl=0.005, hr=0.001, x0=5)
 
 def dambreak_on_wet_no_friction_analytical_builder(Ll=0, Lr=10, hl=0.005, hr=0.001, x0=5, T=6, dh=0.01):
     
-    A = 0.01           
+    A = 0.0
     
     x_range = [Ll, Lr]
     y_range = [0,.1]
@@ -139,16 +140,16 @@ def dambreak_on_wet_no_friction_analytical_builder(Ll=0, Lr=10, hl=0.005, hr=0.0
 
     return params
 
-def ideal_case_ACM_FCM_paper_analytical(t=10, dh=0.1):
+def ideal_case_ACM_FCM_paper_analytical(x, t=10, dh=0.1,):
     A = 0.005           
     alpha = 0.005
     beta = 0.005
     gamma = 1
     q0 = 3
 
-    x_range = [0, 7]
+    #x_range = [0, 7]
 
-    x = np.arange(x_range[0], x_range[1]+dh, dh)
+    #x = np.arange(x_range[0], x_range[1]+dh, dh)
     u_func = lambda x: np.sqrt(((alpha*x + beta)/(A))**(2/3))
     q = q0*np.ones_like(x)
     u = u_func(x)
@@ -166,7 +167,7 @@ def ideal_case_ACM_FCM_paper_builder(T=10, dh=0.1):
     alpha = 0.005
     beta = 0.005
     gamma = 1
-    q0 = 3 
+    q0 = 3
     
     x_range = [0, 7]
     y_range = [0, dh]
@@ -207,7 +208,7 @@ def ideal_case_ACM_FCM_paper_builder(T=10, dh=0.1):
 
     params = {
         "endTime" : T,
-        "outFreq" : 11,
+        "outFreq" : T,
         "cfl" : 1, 
         "dh" : dh,
         "h_init": h,
@@ -238,12 +239,11 @@ def ideal_case_ACM_FCM_paper_builder(T=10, dh=0.1):
 
     return params
 
-def symmetrical_dambreak_exner():
+def symmetrical_dambreak_exner(G=0.001, T=1):
     x_range = [-3, 3]
     y_range = [0,0.01]
     dh = 0.01
     xi = 0.4
-    G = 0.1
 
     x = np.arange(x_range[0], x_range[1]+dh, dh)
     y = np.arange(y_range[0], y_range[1]+dh, dh)
@@ -256,14 +256,12 @@ def symmetrical_dambreak_exner():
     u = np.zeros_like(h)
     v = np.zeros_like(h)
     z = np.ones_like(h)
-    A_g = G*np.ones_like(h)
-    
+    A_g = (1/(1-xi))*G*np.ones_like(h)
 
     inlet_polygon = [[x_range[0]-dh/2, y_range[0]-dh/2],
                      [x_range[0]+dh/2, y_range[0]-dh/2],
                      [x_range[0]+dh/2, y_range[1]+dh/2],
-                     [x_range[0]-dh/2, y_range[1]+dh/2]]
-    
+                     [x_range[0]-dh/2, y_range[1]+dh/2]]  
 
     outlet_polygon = [[x_range[1]-dh/2, y_range[0]-dh/2],
                       [x_range[1]+dh/2, y_range[0]-dh/2],
@@ -271,8 +269,8 @@ def symmetrical_dambreak_exner():
                       [x_range[1]-dh/2, y_range[1]+dh/2]]
     
     params = {
-        "endTime" : 1,
-        "outFreq" : 0.1,
+        "endTime" : T,
+        "outFreq" : T,
         "cfl" : 1, 
         "dh" : dh,
         "h_init": h,
@@ -315,7 +313,7 @@ def symmetrical_dambreak_exner_2D():
     X, Y = np.meshgrid(x, y, indexing="xy")
 
     mask = X**2 + Y**2 <= 1.2**2 
-    h = np.where(mask, 1.0, 0.0)
+    h = np.where(mask, 1.0, 0.2)
         
     n = np.zeros_like(h)
     u = np.zeros_like(h)
